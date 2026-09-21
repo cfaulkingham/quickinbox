@@ -201,7 +201,7 @@
 	let copied = $state(false);
 	let installCopied = $state(false);
 	const installCommand =
-		'curl -fsSL https://raw.githubusercontent.com/DivinPrince/quickinbox/main/scripts/install.sh | sh';
+		'curl -fsSL https://raw.githubusercontent.com/cfaulkingham/quickinbox/main/scripts/install.sh | sh';
 
 	const canCreateKey = $derived(
 		Boolean(keyName.trim()) && (sendScope || readScope || (data.isAdmin && adminScope))

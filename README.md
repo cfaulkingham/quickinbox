@@ -526,7 +526,7 @@ setups can point at it too.
 ## CLI and MCP (local)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/DivinPrince/quickinbox/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/cfaulkingham/quickinbox/main/scripts/install.sh | sh
 quickinbox login --url https://<your-instance> --token <key from Settings>
 quickinbox inbox
 quickinbox send --to someone@example.com --subject "Hi" --body "Hello"
@@ -645,4 +645,4 @@ migrations/          D1 schema, applied in order
 ## License
 
 [MIT](LICENSE.md) — use it, modify it, ship it, commercially or not.
-Copyright © 2026 Irasubiza Divin Prince.
+Copyright © 2026 Colin Faulkingham

@@ -493,7 +493,7 @@ async function run(argv: string[]): Promise<number> {
 					(message.includes('mcp') || message.includes('@modelcontextprotocol/sdk'))
 				) {
 					throw new Error(
-						'MCP is not installed. Re-run: curl -fsSL https://raw.githubusercontent.com/DivinPrince/quickinbox/main/scripts/install.sh | sh'
+						'MCP is not installed. Re-run: curl -fsSL https://raw.githubusercontent.com/cfaulkingham/quickinbox/main/scripts/install.sh | sh'
 					);
 				}
 				throw error;

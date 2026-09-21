@@ -142,7 +142,7 @@
 				type="text"
 				bind:value={name}
 				required
-				placeholder="Divin"
+				placeholder="your name"
 				class="text-input"
 			/>
 

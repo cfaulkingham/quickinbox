@@ -26,7 +26,7 @@ const FORBIDDEN = [
 	{ label: 'Cloudflare API token', pattern: /\bCLOUDFLARE_API_TOKEN\s*[:=]\s*["']?[A-Za-z0-9_-]{30,}/ },
 	{ label: 'Private key block', pattern: /-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----/ },
 	{ label: 'Live Cloudflare account id', pattern: /^\s*"account_id"\s*:\s*"[0-9a-f]{32}"/m },
-	{ label: 'Maintainer infrastructure name', pattern: /divinprince[.-]/i }
+	{ label: 'Maintainer infrastructure name', pattern: /cfaulkingham[.-]/i }
 ];
 
 // Files whose whole job is to show what a secret looks like.

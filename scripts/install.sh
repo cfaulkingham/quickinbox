@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Install the Quickinbox CLI from GitHub (no npm).
-#   curl -fsSL https://raw.githubusercontent.com/DivinPrince/quickinbox/main/scripts/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/cfaulkingham/quickinbox/main/scripts/install.sh | sh
 # Default QUICKINBOX_REF is main; QUICKMAIL_REF still works from before the rename.
 # Piped `sh` is often dash; re-exec with bash before any bash-only syntax.
 if [ -z "${BASH_VERSION:-}" ]; then
@@ -16,7 +16,7 @@ say() { printf '%s\n' "$*"; }
 ok() { printf '  ✓ %s\n' "$*"; }
 warn() { printf '  ! %s\n' "$*"; }
 
-REPO="DivinPrince/quickinbox"
+REPO="cfaulkingham/quickinbox"
 REF="${QUICKINBOX_REF:-${QUICKMAIL_REF:-main}}"
 
 case "$REF" in
