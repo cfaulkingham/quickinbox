@@ -148,7 +148,9 @@ export async function respondToInvitation(env: Store, user: User, emailId: strin
 		id: existing?.id ?? crypto.randomUUID(),
 		fromAddressId: from.id,
 		response,
-		reminderMinutes: existing?.reminderMinutes ?? 10,
+		reminderMinutes: existing ? existing.reminderMinutes : 10,
+		reminders: existing?.reminders,
+		calendarId: existing?.calendarId,
 		version: (existing?.version ?? 0) + 1,
 		updatedAt: new Date().toISOString(),
 		guests: offered.guests.map((g) =>

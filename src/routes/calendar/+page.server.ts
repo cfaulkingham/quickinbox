@@ -1,3 +1,5 @@
+import { organizerSettings } from '$lib/server/organizer-settings';
+import { expandEvent } from '$lib/organizer/recurrence';
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { organizerSession } from '$lib/server/organizer-http';
@@ -18,8 +20,14 @@ export const load: PageServerLoad = async (event) => {
 				[message.from_addr, message.to_addr, message.cc_addr].filter(Boolean).join(', ')
 			).filter((p) => !own.has(p.address))
 		: [];
+	const key = event.url.searchParams.get('occurrence');
+	const occurrence =
+		key && selected ? expandEvent(selected, true).find((o) => o.occurrenceKey === key) : selected;
+	if (key && !occurrence) throw error(404, 'Occurrence not found');
 	return {
-		selected,
+		settings: await organizerSettings(env.DB, user.id),
+		selected: occurrence ?? null,
+		series: selected,
 		addresses: event.locals.addresses,
 		seed: {
 			title: message?.subject.slice(0, 180) ?? '',

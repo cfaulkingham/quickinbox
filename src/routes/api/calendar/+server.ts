@@ -9,7 +9,9 @@ export const GET: RequestHandler = async (event) => {
 			env.DB,
 			user.id,
 			event.url.searchParams.get('start') || '',
-			event.url.searchParams.get('end') || ''
+			event.url.searchParams.get('end') || '',
+			event.url.searchParams.get('q') || '',
+			event.url.searchParams.get('calendar') || ''
 		)
 	);
 };

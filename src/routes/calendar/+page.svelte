@@ -2,15 +2,55 @@
 	import { onMount, untrack } from 'svelte';
 	import { Temporal } from '@js-temporal/polyfill';
 	import type { PageData } from './$types';
-	import type { CalendarEvent } from '$lib/organizer/types';
+	import type { CalendarEvent, PersonalCalendar } from '$lib/organizer/types';
 	import { eventTimes, localTime, shiftDate } from '$lib/organizer/dates';
 	import { organizerRequest } from '$lib/organizer/client';
+	import { validTimeZone } from '$lib/organizer/dates';
+	import WeekGrid from '$lib/organizer/WeekGrid.svelte';
+	import CalendarTransfer from '$lib/organizer/CalendarTransfer.svelte';
 	import EventEditor from '$lib/organizer/EventEditor.svelte';
 	import '$lib/organizer/organizer.css';
 	let { data }: { data: PageData } = $props();
 	let zone = $state('UTC'),
 		date = $state(new Date().toISOString().slice(0, 10)),
 		today = $state(untrack(() => date));
+	let series = $state<CalendarEvent | null>(untrack(() => data.series));
+	let calendars = $state<PersonalCalendar[]>(untrack(() => data.settings.calendars));
+	let calendarId = $state(''),
+		search = $state(''),
+		appliedSearch = $state(''),
+		transferring = $state(false),
+		settingsOpen = $state(false);
+	let zoneInput = $state(''),
+		calendarName = $state(''),
+		calendarColor = $state('#729681'),
+		initialHour = $state(9);
+	let zones = $state<string[]>(['UTC']);
+	async function saveZone() {
+		try {
+			if (!validTimeZone(zoneInput)) throw new Error('Choose a valid IANA time zone.');
+			await organizerRequest('/api/calendar/settings', 'POST', { timeZone: zoneInput });
+			zone = zoneInput;
+			today = localTime(new Date().toISOString(), zone, true);
+			notice = 'Calendar time zone saved.';
+		} catch (cause) {
+			error = (cause as Error).message;
+		}
+	}
+	async function addCalendar() {
+		try {
+			const result = await organizerRequest<{ calendars: PersonalCalendar[] }>(
+				'/api/calendar/settings',
+				'POST',
+				{ calendar: { name: calendarName, color: calendarColor } }
+			);
+			calendars = result.calendars;
+			calendarName = '';
+			notice = 'Calendar added.';
+		} catch (cause) {
+			error = (cause as Error).message;
+		}
+	}
 	let view = $state<'month' | 'week' | 'agenda'>('month');
 	let events = $state<CalendarEvent[]>([]),
 		selected = $state<CalendarEvent | null>(untrack(() => data.selected));
@@ -27,16 +67,34 @@
 		run = 0;
 	let owner = untrack(() => data.user?.id);
 	let seededRoute = untrack(() =>
-		JSON.stringify([data.user?.id, data.selected?.id, data.seed.sourceEmailId, data.seed.guests])
+		JSON.stringify([
+			data.user?.id,
+			data.selected?.id,
+			data.selected?.occurrenceKey,
+			data.seed.sourceEmailId,
+			data.seed.guests
+		])
 	);
 	$effect(() => {
 		const current = data.user?.id;
 		if (current !== owner)
 			untrack(() => {
 				owner = current;
+				series = data.series;
+				calendars = data.settings.calendars;
+				calendarId = '';
+				search = '';
+				appliedSearch = '';
+				settingsOpen = false;
+				transferring = false;
+				zone = data.settings.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+				zoneInput = zone;
+				today = localTime(new Date().toISOString(), zone, true);
+				date = today;
 				run++;
 				events = [];
 				selected = data.selected;
+				series = data.series;
 				editing = Boolean(data.selected || data.seed.sourceEmailId || data.seed.guests);
 				useSeed = true;
 				error = '';
@@ -45,7 +103,9 @@
 			});
 	});
 	onMount(() => {
-		zone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+		zone = data.settings.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+		zoneInput = zone;
+		zones = ['UTC', ...Intl.supportedValuesOf('timeZone')];
 		today = localTime(new Date().toISOString(), zone, true);
 		date = data.selected ? localTime(data.selected.startsAt, zone, true) : today;
 		editorDate = date;
@@ -56,6 +116,7 @@
 		const route = JSON.stringify([
 			data.user?.id,
 			data.selected?.id,
+			data.selected?.occurrenceKey,
 			data.seed.sourceEmailId,
 			data.seed.guests
 		]);
@@ -63,6 +124,7 @@
 			seededRoute = route;
 			untrack(() => {
 				selected = data.selected;
+				series = data.series;
 				if (selected) date = localTime(selected.startsAt, zone, true);
 				editing = Boolean(selected || data.seed.sourceEmailId || data.seed.guests);
 				useSeed = true;
@@ -97,22 +159,31 @@
 		if (ready) {
 			const a = first,
 				b = shiftDate(days.at(-1)!, 1),
-				tz = zone;
-			void load(a, b, tz);
+				tz = zone,
+				q = appliedSearch,
+				calendar = calendarId;
+			void load(a, b, tz, q, calendar);
 		}
 	});
-	async function load(a = first, b = shiftDate(days.at(-1)!, 1), tz = zone) {
+	async function load(
+		a = first,
+		b = shiftDate(days.at(-1)!, 1),
+		tz = zone,
+		q = appliedSearch,
+		calendar = calendarId
+	) {
 		const current = ++run;
 		loading = true;
 		error = '';
 		try {
 			const range = eventTimes(a, b, tz, true);
 			const result = await organizerRequest<{ events: CalendarEvent[]; truncated: boolean }>(
-				`/api/calendar?start=${encodeURIComponent(range.startsAt)}&end=${encodeURIComponent(range.endsAt)}`
+				`/api/calendar?start=${encodeURIComponent(range.startsAt)}&end=${encodeURIComponent(range.endsAt)}&q=${encodeURIComponent(q)}&calendar=${encodeURIComponent(calendar)}`
 			);
 			if (current !== run) return;
 			events = result.events;
-			if (result.truncated) notice = 'Showing the first 1,000 events. Choose a smaller date range.';
+			if (result.truncated)
+				notice = 'This view reached its event limit. Choose a smaller date range or one calendar.';
 		} catch (cause) {
 			if (current === run) error = (cause as Error).message;
 		} finally {
@@ -143,19 +214,36 @@
 					timeZone: zone
 				}).format(new Date(event.startsAt));
 	}
-	function create(day = today) {
+	function create(day = today, hour = 9) {
+		series = null;
+		initialHour = hour;
 		selected = null;
 		editing = true;
 		editorDate = day;
 		useSeed = false;
 		editorKey++;
 	}
-	async function open(event: CalendarEvent) {
+	async function open(event: CalendarEvent, moveTo?: { day: string; hour: number }) {
 		const openingOwner = owner;
 		try {
-			const result = await organizerRequest<{ event: CalendarEvent }>(`/api/calendar/${event.id}`);
+			const result = await organizerRequest<{ event: CalendarEvent; series: CalendarEvent }>(
+				`/api/calendar/${event.id}?occurrence=${encodeURIComponent(event.occurrenceKey || '')}`
+			);
 			if (owner !== openingOwner) return;
+			series = result.series;
 			selected = result.event;
+			if (moveTo && !selected.allDay) {
+				const duration = Date.parse(selected.endsAt) - Date.parse(selected.startsAt);
+				const start = Temporal.PlainDateTime.from(
+					`${moveTo.day}T${String(moveTo.hour).padStart(2, '0')}:00`
+				).toZonedDateTime(zone, { disambiguation: 'reject' }).epochMilliseconds;
+				selected = {
+					...selected,
+					startLocal: localTime(new Date(start).toISOString(), selected.timeZone),
+					endLocal: localTime(new Date(start + duration).toISOString(), selected.timeZone)
+				};
+				notice = 'Review the new time and save to reschedule.';
+			}
 			editing = true;
 			useSeed = false;
 			editorKey++;
@@ -165,7 +253,8 @@
 	}
 	function saved(event: CalendarEvent) {
 		selected = event;
-		editing = !event.cancelled;
+		series = event;
+		editing = false;
 		editorKey++;
 		notice = event.cancelled
 			? 'Event cancelled. Guest cancellations are queued in Outbox.'
@@ -184,7 +273,9 @@
 			<p class="subtle">Plan your day, invite people, and stay on time.</p>
 		</div>
 		<div class="actions">
-			<button onclick={() => load()} disabled={loading}>Refresh</button><button
+			<button onclick={() => (settingsOpen = !settingsOpen)}>Calendar settings</button><button
+				onclick={() => (transferring = !transferring)}>Import / Export</button
+			><button onclick={() => load()} disabled={loading}>Refresh</button><button
 				class="primary"
 				onclick={() => create()}>+ New event</button
 			>
@@ -196,6 +287,46 @@
 		>
 			{notice}
 		</p>{/if}
+	{#if settingsOpen}<section class="settings-panel" aria-label="Calendar settings">
+			<form
+				class="actions"
+				onsubmit={(e) => {
+					e.preventDefault();
+					void saveZone();
+				}}
+			>
+				<label
+					>Display time zone<input bind:value={zoneInput} list="calendar-zones" required /><datalist
+						id="calendar-zones"
+						>{#each zones as tz}<option value={tz}></option>{/each}</datalist
+					></label
+				><button>Save time zone</button>
+			</form>
+			<form
+				class="actions"
+				onsubmit={(e) => {
+					e.preventDefault();
+					void addCalendar();
+				}}
+			>
+				<label
+					>New calendar<input
+						bind:value={calendarName}
+						maxlength="80"
+						required
+						placeholder="Work, Family…"
+					/></label
+				><label>Color<input type="color" bind:value={calendarColor} /></label><button
+					>Add calendar</button
+				>
+			</form>
+		</section>{/if}
+	{#if transferring}<CalendarTransfer
+			timeZone={zone}
+			{calendarId}
+			onDone={() => load()}
+			onClose={() => (transferring = false)}
+		/>{/if}
 	<div class="calendar-body" class:editing>
 		<section class="calendar-main" aria-label="Calendar">
 			<div class="calendar-toolbar">
@@ -222,8 +353,43 @@
 					/>
 				</div>
 			</div>
-			<p class="calendar-zone subtle">{zone}{loading ? ' · Loading…' : ''}</p>
-			{#if view === 'agenda'}
+			<form
+				class="calendar-search actions"
+				onsubmit={(e) => {
+					e.preventDefault();
+					appliedSearch = search;
+				}}
+			>
+				<input
+					type="search"
+					aria-label="Search calendar"
+					bind:value={search}
+					placeholder="Search this period"
+				/><button>Search</button>{#if appliedSearch}<button
+						type="button"
+						onclick={() => {
+							search = '';
+							appliedSearch = '';
+						}}>Clear</button
+					>{/if}<select aria-label="Choose calendar" bind:value={calendarId}
+					><option value="">All calendars</option><option value="default">Personal</option
+					>{#each calendars as calendar}<option value={calendar.id}>{calendar.name}</option
+						>{/each}</select
+				>
+			</form>
+			<p class="calendar-zone subtle">
+				{zone}{loading ? ' · Loading…' : ''}{appliedSearch ? ` · ${events.length} matches` : ''}
+			</p>
+			{#if view === 'week'}<WeekGrid
+					{days}
+					{events}
+					{zone}
+					{today}
+					onOpen={(event) => open(event)}
+					onCreate={create}
+					onMove={(event, day, hour) => open(event, { day, hour })}
+				/>
+			{:else if view === 'agenda'}
 				<div class="agenda">
 					{#each days as day}{@const appointments = dayEvents(day)}{#if appointments.length}<section
 							>
@@ -250,7 +416,7 @@
 						</div>{/if}
 				</div>
 			{:else}
-				<div class="calendar-grid" class:week={view === 'week'}>
+				<div class="calendar-grid">
 					<div class="weekdays">
 						{#each ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as day}<span>{day}</span
 							>{/each}
@@ -285,6 +451,10 @@
 		</section>
 		{#if editing && ready}{#key `${editorKey}-${data.user?.id}`}<EventEditor
 					event={selected}
+					{series}
+					{calendars}
+					{initialHour}
+					initialCalendarId={calendarId === 'default' ? '' : calendarId}
 					addresses={data.addresses}
 					date={editorDate}
 					timeZone={zone}
@@ -297,6 +467,26 @@
 </div>
 
 <style>
+	.settings-panel {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 24px;
+		padding: 16px 24px;
+		border-bottom: 1px solid var(--color-line);
+	}
+	.settings-panel form {
+		align-items: end;
+	}
+	.calendar-search {
+		padding: 0 24px 12px;
+	}
+	.calendar-search input {
+		max-width: min(240px, 100%);
+	}
+	.calendar-search select {
+		width: auto;
+		max-width: 200px;
+	}
 	.calendar-body {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
@@ -358,9 +548,6 @@
 	.day-grid {
 		flex: 1;
 		grid-template-rows: repeat(6, minmax(86px, 1fr));
-	}
-	.week .day-grid {
-		grid-template-rows: 1fr;
 	}
 	.day {
 		min-width: 0;

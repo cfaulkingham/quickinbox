@@ -35,7 +35,7 @@ export function localTime(iso: string, zone: string, allDay = false): string {
 	const date = Temporal.Instant.from(iso).toZonedDateTimeISO(zone);
 	return allDay
 		? date.toPlainDate().toString()
-		: date.toPlainDateTime().toString({ smallestUnit: 'minute' });
+		: date.toPlainDateTime().toString({ smallestUnit: date.second ? 'second' : 'minute' });
 }
 
 export function shiftDate(date: string, days: number): string {

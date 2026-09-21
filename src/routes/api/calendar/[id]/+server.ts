@@ -1,3 +1,4 @@
+import { expandEvent } from '$lib/organizer/recurrence';
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import {
@@ -5,7 +6,9 @@ import {
 	getCalendarEvent,
 	saveCalendarEvent,
 	flushCalendarNotices,
-	persistCalendarEvent
+	persistCalendarEvent,
+	remindersInput,
+	respondFromCalendar
 } from '$lib/server/calendar';
 import { getEmailProviderKind } from '$lib/server/context';
 import { invitationFile } from '$lib/server/calendar-ical';
@@ -28,7 +31,10 @@ export const GET: RequestHandler = async (event) => {
 	)
 		.bind(saved.id, user.id)
 		.all();
-	return organizerJson({ event: saved, notices: notices.results });
+	const key = event.url.searchParams.get('occurrence');
+	const occurrence = key ? expandEvent(saved, true).find((o) => o.occurrenceKey === key) : saved;
+	if (!occurrence) throw error(404, 'Occurrence not found');
+	return organizerJson({ event: occurrence, series: saved, notices: notices.results });
 };
 export const PUT: RequestHandler = async (event) => {
 	const { env, user } = organizerSession(event);
@@ -45,9 +51,22 @@ export const PUT: RequestHandler = async (event) => {
 };
 export const DELETE: RequestHandler = async (event) => {
 	const { env, user } = organizerSession(event);
-	const raw = (await organizerBody(event.request)) as { version?: number };
+	const raw = (await organizerBody(event.request)) as {
+		version?: number;
+		scope?: 'this' | 'future' | 'all';
+		occurrenceKey?: string;
+	};
 	if (!Number.isInteger(raw?.version)) throw error(400, 'Event version required');
-	const saved = await cancelCalendarEvent(env.DB, user, event.params.id, raw.version!);
+	if (raw.scope && !['this', 'future', 'all'].includes(raw.scope))
+		throw error(400, 'Invalid edit scope');
+	const saved = await cancelCalendarEvent(
+		env.DB,
+		user,
+		event.params.id,
+		raw.version!,
+		raw.scope,
+		raw.occurrenceKey
+	);
 	event.platform?.ctx.waitUntil(
 		flushCalendarNotices(env, getEmailProviderKind(event.platform), user.id)
 	);
@@ -59,7 +78,16 @@ export const PATCH: RequestHandler = async (event) => {
 		version?: number;
 		reminderMinutes?: number | null;
 		retryNotices?: boolean;
+		reminders?: number[];
+		response?: string;
 	};
+	if (raw?.response) {
+		const saved = await respondFromCalendar(env.DB, user, event.params.id, raw);
+		event.platform?.ctx.waitUntil(
+			flushCalendarNotices(env, getEmailProviderKind(event.platform), user.id)
+		);
+		return organizerJson({ event: saved });
+	}
 	const previous = await getCalendarEvent(env.DB, user.id, event.params.id);
 	if (!previous) throw error(404, 'Event not found');
 	if (raw?.retryNotices === true) {
@@ -75,7 +103,12 @@ export const PATCH: RequestHandler = async (event) => {
 	}
 	if (raw?.version !== previous.version)
 		throw error(409, 'Event changed. Reload before updating the reminder.');
-	const minutes = raw.reminderMinutes;
+	const parsedReminders = remindersInput.safeParse(
+		raw.reminders ?? (raw.reminderMinutes === null ? [] : [raw.reminderMinutes])
+	);
+	if (!parsedReminders.success)
+		throw error(400, 'Choose up to five reminders, no more than a week before the event.');
+	const minutes = parsedReminders.data[0] ?? null;
 	if (minutes !== null && (!Number.isInteger(minutes) || minutes! < 0 || minutes! > 10080))
 		throw error(400, 'Invalid reminder');
 	const saved = await persistCalendarEvent(
@@ -84,6 +117,7 @@ export const PATCH: RequestHandler = async (event) => {
 		{
 			...previous,
 			reminderMinutes: minutes ?? null,
+			reminders: parsedReminders.data,
 			version: previous.version + 1,
 			updatedAt: new Date().toISOString()
 		},

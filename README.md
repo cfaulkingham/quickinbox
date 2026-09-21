@@ -58,7 +58,7 @@ If you already deployed from this repo, pulling updates only changes the product
 
 ### Contacts and calendar
 
-Apply `0029_contacts_calendar.sql` before deploying this version (`bun run deploy`
+Apply migrations through `0030_organizer_parity.sql` before deploying this version (`bun run deploy`
 applies migrations automatically). Contacts and events use the existing D1
 database; calendar email attachments use R2 and the existing durable Outbox.
 Keep the existing once-per-minute scheduled trigger enabled for invitation
@@ -78,13 +78,36 @@ event's **Invitation delivery** section or **Outbox** to inspect delivery errors
 Reminders appear while the app is open, and use browser push when enabled in
 Settings → Notifications. Push is best effort; in-app reminders remain available
 until dismissed or the event ends. A due reminder is normally picked up within
-one minute. Events can be downloaded as `.ics` files.
+one minute. Add up to five reminders per event and snooze a due reminder for ten
+minutes. Events and calendars can be downloaded as `.ics` files.
 
-This is the first built-in release: one personal calendar, individual events,
-up to 30 guests per event, and one reminder per event. Recurring invitations are
-identified and left available for download rather than partially imported.
-Calendar sharing, recurring series, contact/calendar bulk import, Google sync,
-and appointment booking are future work. See the [parity roadmap](docs/mail-parity.md).
+Contacts now support groups, birthdays, favorites, and people without an email
+address. **Find duplicates** suggests contacts with matching names; review the
+primary contact before merging. Emails, groups and notes are combined, and
+conflicting details are retained in notes. Groups of up to 30 contacts also appear
+in recipient suggestions. **Import / Export** previews vCard or Google Contacts
+CSV files before importing; existing email addresses are skipped.
+
+Calendar includes a timed week grid with overlapping appointments. Click an hour
+to create an event, or drag an event to a new hour and review the change before
+saving. **Calendar settings** adds personal calendars and saves your display time
+zone. Search filters the visible period. You can respond to invitations directly
+from event details.
+
+Daily, weekly, monthly and yearly series support 1–366 occurrences, with edits or
+cancellations for this occurrence, this and following occurrences, or all events.
+Repeat times follow the event's time zone across DST. Invalid month dates and
+nonexistent DST times are skipped. Changing the series schedule after editing
+individual occurrences requires explicitly confirming that those edits can reset.
+Guests and reminder settings apply to the whole series.
+
+Calendar file import creates personal copies with no guests or reminders and
+sends no mail. It skips existing event UIDs and reports unsupported items. Supported
+recurring ICS uses the same finite COUNT rules; BYDAY, UNTIL, RDATE, unbounded rules,
+and standalone recurrence updates are reported instead of partially imported.
+Files are limited to 2 MB; contact imports support 2,000 contacts and calendar
+imports support 500 events/series. See the [parity roadmap](docs/mail-parity.md)
+for detailed limits and remaining collaboration, localization, and Google sync work.
 
 ### Importing and exporting mail
 
@@ -645,4 +668,6 @@ migrations/          D1 schema, applied in order
 ## License
 
 [MIT](LICENSE.md) — use it, modify it, ship it, commercially or not.
-Copyright © 2026 Colin Faulkingham, Divin Prince
+Copyright © 2026 Colin Faulkingham 
+
+Based on a fork from: https://github.com/DivinPrince/quickinbox Divin Prince

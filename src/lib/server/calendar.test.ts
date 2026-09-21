@@ -83,7 +83,10 @@ test('inline and attached MIME calendar copies expose one invitation and one RSV
 		'Content-Transfer-Encoding: base64',
 		'',
 		Buffer.from(
-			invitationFile({ ...event, guests: [...event.guests].reverse() }, 'REQUEST').replace(/\r\n/g, '\n')
+			invitationFile({ ...event, guests: [...event.guests].reverse() }, 'REQUEST').replace(
+				/\r\n/g,
+				'\n'
+			)
 		).toString('base64'),
 		'--mail-part--',
 		''
@@ -156,7 +159,10 @@ test('invitation deduplication preserves different events, revisions, methods an
 	assert.equal(result.invitations.filter((i) => i.event.uid === 'separate-event').length, 1);
 	assert.equal(result.invitations.filter((i) => i.event.sequence === 1).length, 1);
 	assert.equal(result.invitations.filter((i) => i.method === 'CANCEL').length, 1);
-	assert.equal(result.invitations.filter((i) => i.event.location === 'Changed meeting room').length, 1);
+	assert.equal(
+		result.invitations.filter((i) => i.event.location === 'Changed meeting room').length,
+		1
+	);
 });
 
 test('calendar stores UTC instants, isolates owners, and atomically creates notices/reminders', async () => {
@@ -250,16 +256,16 @@ test('iCalendar roundtrips dates, text escapes, guests, and cancellations', asyn
 	assert.equal(a.allDay, true);
 });
 
-test('invitation parser rejects recurring series and unsafe structures; resolves IANA zones', async () => {
+test('invitation parser rejects unbounded recurring series and unsafe structures; resolves IANA zones', async () => {
 	const s = testStore();
 	const event = await saveCalendarEvent(s.db, s.user, input);
 	const source = invitationFile(event, 'REQUEST');
 	assert.throws(
 		() => parseInvitation(source.replace('END:VEVENT', 'RRULE:FREQ=DAILY\r\nEND:VEVENT')),
-		/Recurring/
+		/COUNT/
 	);
 	assert.throws(() => parseInvitation('BEGIN:VCALENDAR\n'.repeat(20)), /deeply/);
-	assert.throws(() => parseInvitation('x'.repeat(270_000)), /large/);
+	assert.throws(() => parseInvitation('x'.repeat(270_000)), /size limit/);
 	const iana = source
 		.replace(/DTSTART:[^\r]+/, 'DTSTART;TZID=America/Chicago:20300620T090000')
 		.replace(/DTEND:[^\r]+/, 'DTEND;TZID=America/Chicago:20300620T100000');

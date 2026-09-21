@@ -26,9 +26,9 @@
 			document.removeEventListener('visibilitychange', refresh);
 		};
 	});
-	async function dismiss(id: string) {
+	async function dismiss(id: string, snoozeMinutes?: number) {
 		try {
-			await organizerRequest('/api/calendar/reminders', 'POST', { id });
+			await organizerRequest('/api/calendar/reminders', 'POST', { id, snoozeMinutes });
 			reminders = reminders.filter((r) => r.id !== id);
 			error = '';
 		} catch (cause) {
@@ -44,10 +44,15 @@
 	>
 		{#each reminders.slice(0, 3) as reminder (reminder.id)}<div class="reminder">
 				<div>
-					<span>Calendar reminder</span><a href={`/calendar?event=${reminder.event_id}`}
+					<span>Calendar reminder</span><a
+						href={`/calendar?event=${reminder.event_id}&occurrence=${encodeURIComponent(reminder.occurrence_key || '')}`}
 						>{reminder.title}</a
 					><small>{new Date(reminder.starts_at).toLocaleString()}</small>
 				</div>
+				<button
+					onclick={() => dismiss(reminder.id, 10)}
+					aria-label={`Snooze ${reminder.title} for 10 minutes`}>10 min</button
+				>
 				<button
 					onclick={() => dismiss(reminder.id)}
 					aria-label={`Dismiss reminder for ${reminder.title}`}>✕</button

@@ -86,15 +86,23 @@ export function contactSuggestions(input: HTMLInputElement) {
 		timer = setTimeout(async () => {
 			controller = new AbortController();
 			try {
-				const response = await fetch(`/api/contacts?q=${encodeURIComponent(query)}&limit=8`, {
-					signal: controller.signal
-				});
+				const response = await fetch(
+					`/api/contacts?q=${encodeURIComponent(query)}&limit=8&suggestions=1`,
+					{
+						signal: controller.signal
+					}
+				);
 				if (!response.ok) return;
-				const data: { contacts: Contact[] } = await response.json();
+				const data: { contacts: Contact[]; suggestions?: { name: string; emails: string[] }[] } =
+					await response.json();
 				if (run !== generation || document.activeElement !== input) return;
-				choices = data.contacts
-					.flatMap((c) => c.emails.map((email) => ({ name: c.name, email })))
-					.slice(0, 10);
+				choices = [
+					...(data.suggestions ?? []).map((g) => ({
+						name: `${g.name} · Group (${g.emails.length})`,
+						email: g.emails.join(', ')
+					})),
+					...data.contacts.flatMap((c) => c.emails.map((email) => ({ name: c.name, email })))
+				].slice(0, 10);
 				menu.replaceChildren();
 				for (const [i, choice] of choices.entries()) {
 					const option = document.createElement('div');

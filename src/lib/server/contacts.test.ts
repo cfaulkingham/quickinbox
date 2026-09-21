@@ -91,6 +91,10 @@ test('recipient token replacement preserves quoted commas and earlier addresses'
 test('existing mail tokens do not gain contacts or calendar privileges', () => {
 	for (const pathname of [
 		'/api/contacts',
+		'/api/contacts/transfer',
+		'/api/contacts/merge',
+		'/api/calendar/settings',
+		'/api/calendar/transfer',
 		'/api/calendar',
 		'/api/calendar/id',
 		'/api/mail/id/invitations'

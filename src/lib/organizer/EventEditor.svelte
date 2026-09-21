@@ -1,12 +1,19 @@
 <script lang="ts">
 	import { untrack, onMount, onDestroy } from 'svelte';
-	import type { CalendarEvent } from './types';
+	import { Temporal } from '@js-temporal/polyfill';
+	import { eventReminders } from './recurrence';
+	import ReminderPicker from './ReminderPicker.svelte';
+	import type { CalendarEvent, PersonalCalendar, Recurrence } from './types';
 	import type { MailAddress } from '$lib/types';
 	import { eventTimes, shiftDate } from './dates';
 	import { organizerRequest } from './client';
 	import { contactSuggestions } from './contact-suggestions';
 	let {
 		event = null,
+		series = null,
+		calendars = [],
+		initialHour = 9,
+		initialCalendarId = '',
 		addresses,
 		date,
 		timeZone,
@@ -16,6 +23,10 @@
 		onClose
 	}: {
 		event?: CalendarEvent | null;
+		series?: CalendarEvent | null;
+		calendars?: PersonalCalendar[];
+		initialHour?: number;
+		initialCalendarId?: string;
 		addresses: MailAddress[];
 		date: string;
 		timeZone: string;
@@ -26,18 +37,26 @@
 	} = $props();
 	const original = untrack(() => event),
 		initial = untrack(() => seed);
+	const master = untrack(() => series) ?? original;
 	const id = original?.id ?? crypto.randomUUID();
 	let title = $state(original?.title || initial?.title || '');
 	let description = $state(original?.description || initial?.description || '');
 	let location = $state(original?.location || '');
 	let allDay = $state(original?.allDay ?? false);
-	let start = $state(original?.startLocal ?? `${untrack(() => date)}T09:00`);
+	let start = $state(
+		original?.startLocal ??
+			`${untrack(() => date)}T${String(untrack(() => initialHour)).padStart(2, '0')}:00`
+	);
 	let end = $state(
 		original
 			? original.allDay
 				? shiftDate(original.endLocal, -1)
 				: original.endLocal
-			: `${untrack(() => date)}T10:00`
+			: Temporal.PlainDateTime.from(
+					`${untrack(() => date)}T${String(untrack(() => initialHour)).padStart(2, '0')}:00`
+				)
+					.add({ hours: 1 })
+					.toString({ smallestUnit: 'minute' })
 	);
 	let zone = $state(original?.timeZone ?? untrack(() => timeZone));
 	let guests = $state(original?.guests.map((g) => g.email).join(', ') ?? initial?.guests ?? '');
@@ -45,10 +64,45 @@
 		original?.fromAddressId ??
 			untrack(() => addresses.find((a) => a.is_default)?.id || addresses[0]?.id || '')
 	);
-	let reminder = $state(
-		original?.reminderMinutes === null ? 'none' : String(original?.reminderMinutes ?? 10)
+	let reminders = $state<number[]>(original ? [...eventReminders(original)] : [10]);
+	let calendarId = $state(original?.calendarId ?? untrack(() => initialCalendarId));
+	let resetExceptions = $state(false);
+	let frequency = $state<Recurrence['frequency'] | ''>(original?.recurrence?.frequency ?? '');
+	let interval = $state(original?.recurrence?.interval ?? 1),
+		count = $state(original?.recurrence?.count ?? 10);
+	let scope = $state<'this' | 'future' | 'all'>(original?.occurrenceKey ? 'this' : 'all');
+	const scoped = $derived(!!original?.recurrence && scope !== 'all');
+	function changeScope() {
+		const source = scope === 'all' ? master : original;
+		if (!source) return;
+		title = source.title;
+		description = source.description;
+		location = source.location;
+		start = source.startLocal;
+		end = source.allDay ? shiftDate(source.endLocal, -1) : source.endLocal;
+	}
+	async function respond(response: string) {
+		busy = true;
+		error = '';
+		try {
+			const result = await organizerRequest<{ event: CalendarEvent }>(
+				`/api/calendar/${id}`,
+				'PATCH',
+				{ version: detailVersion, response }
+			);
+			if (alive) onSave(result.event);
+		} catch (cause) {
+			error = (cause as Error).message;
+		} finally {
+			busy = false;
+		}
+	}
+
+	let color = $state(
+		original?.color ||
+			untrack(() => calendars.find((c) => c.id === initialCalendarId)?.color) ||
+			'#729681'
 	);
-	let color = $state(original?.color || '#729681');
 	let busy = $state(false),
 		error = $state('');
 	let alive = true;
@@ -124,7 +178,14 @@
 						.map((email) => ({ email, name: '' })),
 					fromAddressId,
 					sourceEmailId: original?.sourceEmailId ?? initial?.sourceEmailId ?? null,
-					reminderMinutes: reminder === 'none' ? null : Number(reminder)
+					reminders,
+					calendarId: calendarId || null,
+					recurrence: frequency
+						? { frequency, interval: Number(interval), count: Number(count) }
+						: null,
+					scope,
+					occurrenceKey: original?.occurrenceKey,
+					resetExceptions
 				}
 			);
 			if (alive) onSave(result.event);
@@ -139,8 +200,8 @@
 			!original ||
 			!confirm(
 				original.guests.length
-					? 'Cancel this event and send cancellation emails to all guests?'
-					: 'Delete this event from your calendar?'
+					? `Cancel ${original.recurrence ? (scope === 'all' ? 'the entire series' : scope === 'future' ? 'this and following occurrences' : 'this occurrence') : 'this event'} and notify guests?`
+					: `Delete ${original.recurrence ? (scope === 'all' ? 'the entire series' : scope === 'future' ? 'this and following occurrences' : 'this occurrence') : 'this event'} from your calendar?`
 			)
 		)
 			return;
@@ -150,7 +211,7 @@
 			const result = await organizerRequest<{ event: CalendarEvent }>(
 				`/api/calendar/${id}`,
 				'DELETE',
-				{ version: original.version }
+				{ version: original.version, scope, occurrenceKey: original.occurrenceKey }
 			);
 			if (alive) onSave(result.event);
 		} catch (cause) {
@@ -166,7 +227,7 @@
 			const result = await organizerRequest<{ event: CalendarEvent }>(
 				`/api/calendar/${id}`,
 				'PATCH',
-				{ version: detailVersion, reminderMinutes: reminder === 'none' ? null : Number(reminder) }
+				{ version: detailVersion, reminders }
 			);
 			detailVersion = result.event.version;
 			if (alive) onSave(result.event);
@@ -211,17 +272,26 @@
 					>{original?.response.replace('NEEDS-ACTION', 'Not yet responded').toLowerCase()}</strong
 				>
 			</p>
-			<label
-				>Reminder<select bind:value={reminder}
-					><option value="none">No reminder</option><option value="0">At event time</option><option
-						value="10">10 minutes before</option
-					><option value="30">30 minutes before</option><option value="60">1 hour before</option
-					><option value="1440">1 day before</option></select
-				></label
-			><button disabled={busy} onclick={saveReminder}>Save reminder</button>
+			<div class="actions">
+				{#each [{ value: 'ACCEPTED', label: 'Accept' }, { value: 'TENTATIVE', label: 'Maybe' }, { value: 'DECLINED', label: 'Decline' }] as choice}<button
+						disabled={busy || original?.response === choice.value}
+						onclick={() => respond(choice.value)}>{choice.label}</button
+					>{/each}
+			</div>
+			<ReminderPicker bind:values={reminders} disabled={busy} /><button
+				disabled={busy}
+				onclick={saveReminder}>Save reminders</button
+			>
 		{/if}
 	{:else}
 		<form onsubmit={save}>
+			{#if original?.recurrence}<label
+					>Edit recurring event<select bind:value={scope} onchange={changeScope}
+						><option value="this">This event</option><option value="future"
+							>This and following events</option
+						><option value="all">All events</option></select
+					></label
+				>{/if}
 			<label
 				>Event title<input
 					bind:value={title}
@@ -231,21 +301,36 @@
 				/></label
 			>
 			<label class="check"
-				><input type="checkbox" bind:checked={allDay} onchange={toggleAllDay} />All day</label
+				><input
+					type="checkbox"
+					bind:checked={allDay}
+					disabled={scoped}
+					onchange={toggleAllDay}
+				/>All day</label
 			>
 			<div class="form-grid">
 				<label
 					>Start<input
 						type={allDay ? 'date' : 'datetime-local'}
+						step={allDay ? undefined : 1}
 						bind:value={start}
 						required
 					/></label
 				><label
-					>End<input type={allDay ? 'date' : 'datetime-local'} bind:value={end} required /></label
+					>End<input
+						type={allDay ? 'date' : 'datetime-local'}
+						step={allDay ? undefined : 1}
+						bind:value={end}
+						required
+					/></label
 				>
 				<label class="wide"
-					>Time zone<input bind:value={zone} list="event-timezones" required /><datalist
-						id="event-timezones"
+					>Time zone<input
+						bind:value={zone}
+						disabled={scoped}
+						list="event-timezones"
+						required
+					/><datalist id="event-timezones"
 						>{#each zones as tz}<option value={tz}></option>{/each}</datalist
 					></label
 				>
@@ -260,6 +345,7 @@
 				>Guests<input
 					use:contactSuggestions
 					bind:value={guests}
+					disabled={scoped}
 					placeholder="Add email addresses"
 				/><span class="subtle"
 					>Separate guests with commas. Saving sends invitations or updates.</span
@@ -279,17 +365,53 @@
 				/></label
 			>
 			<label>Description<textarea bind:value={description} maxlength="8000"></textarea></label>
-			<div class="form-grid">
+			{#if !scoped}
+				{#if Object.keys(master?.exceptions ?? {}).length}<label class="check"
+						><input type="checkbox" bind:checked={resetExceptions} />Reset occurrence edits if
+						changing the series schedule</label
+					>{/if}
 				<label
-					>Reminder<select bind:value={reminder}
-						><option value="none">No reminder</option><option value="0">At event time</option
-						><option value="10">10 minutes before</option><option value="30"
-							>30 minutes before</option
-						><option value="60">1 hour before</option><option value="1440">1 day before</option
-						></select
+					>Calendar<select bind:value={calendarId}
+						><option value="">Personal</option>{#each calendars as calendar}<option
+								value={calendar.id}>{calendar.name}</option
+							>{/each}</select
 					></label
-				><label>Event color<input type="color" bind:value={color} /></label>
-			</div>
+				>
+				<label
+					>Repeat<select bind:value={frequency}
+						><option value="">Does not repeat</option><option value="DAILY">Daily</option><option
+							value="WEEKLY">Weekly</option
+						><option value="MONTHLY">Monthly</option><option value="YEARLY">Yearly</option></select
+					></label
+				>
+				{#if frequency}<div class="form-grid">
+						<label
+							>Every<input type="number" min="1" max="30" required bind:value={interval} /><span
+								class="subtle"
+								>{frequency
+									.toLowerCase()
+									.replace('daily', 'days')
+									.replace('weekly', 'weeks')
+									.replace('monthly', 'months')
+									.replace('yearly', 'years')}</span
+							></label
+						><label
+							>Occurrences<input
+								type="number"
+								min="1"
+								max="366"
+								required
+								bind:value={count}
+							/></label
+						>
+					</div>{/if}
+				<ReminderPicker bind:values={reminders} disabled={busy} />
+				<label>Event color<input type="color" bind:value={color} /></label>
+			{:else}<p class="subtle">
+					Guests, reminders, calendar and repeat settings apply to the series. Choose All events to
+					change them.
+				</p>{/if}
+
 			<div class="actions">
 				<button class="primary" disabled={busy || !fromAddressId}
 					>{busy ? 'Saving…' : guests.trim() ? 'Save & send invitations' : 'Save event'}</button
