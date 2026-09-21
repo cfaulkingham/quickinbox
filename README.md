@@ -645,4 +645,4 @@ migrations/          D1 schema, applied in order
 ## License
 
 [MIT](LICENSE.md) — use it, modify it, ship it, commercially or not.
-Copyright © 2026 Colin Faulkingham
+Copyright © 2026 Colin Faulkingham, Divin Prince
