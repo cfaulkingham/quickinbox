@@ -277,7 +277,6 @@
 		position: relative;
 	}
 	.meeting-container :global(rtk-meeting) {
-		display: block;
 		width: 100%;
 		height: 100%;
 		position: absolute;
