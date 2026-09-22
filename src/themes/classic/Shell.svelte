@@ -3,6 +3,7 @@
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/stores';
 	import Sidebar from '$lib/components/Sidebar.svelte';
+	import OrganizerRail from '$lib/components/OrganizerRail.svelte';
 	import Topbar from '$lib/components/Topbar.svelte';
 	import SplitLayoutPicker, { type SplitLayout } from '$lib/components/SplitLayoutPicker.svelte';
 	import { CLASSIC_LAYOUT, type ClassicLayoutContext } from './layout';
@@ -112,6 +113,8 @@
 		</main>
 	</div>
 
+	<OrganizerRail />
+
 	{#if !stacked}
 		<MobileChrome
 			counts={data.counts}
@@ -130,6 +133,7 @@
 	.app-main.app-main-organizer { padding:0; height:calc(100dvh - var(--topbar-height)); flex:none; overflow:hidden; }
 	@media(max-width:900px) { .app-main.app-main-organizer { height:calc(100dvh - var(--bottom-nav-height) - env(safe-area-inset-bottom)); padding:0; } }
 	@media (min-width: 901px) {
+		.app-content { margin-right: var(--organizer-rail-width); }
 		.app-main-split {
 			flex: none;
 			height: calc(100dvh - var(--topbar-height));

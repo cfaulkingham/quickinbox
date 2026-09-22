@@ -25,6 +25,7 @@
 		"refresh": "Refresh",
 		"remove": "Remove",
 		"more": "More",
+		"less": "Less",
 		"search": "Search",
 		"filter": "Filter",
 		"select": "Select",
@@ -40,6 +41,13 @@
 		"open": "Open"
 	},
 	"nav": {
+		"calendar": "Calendar",
+		"tasks": "Tasks",
+		"contacts": "Contacts",
+		"contactsAddressBook": "Contacts / Address book",
+		"organizer": "Organizer",
+		"waitingForReply": "Waiting for reply",
+		"attachments": "Attachments",
 		"inbox": "Inbox",
 		"primary": "Primary",
 		"social": "Social",

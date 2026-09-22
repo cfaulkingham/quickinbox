@@ -32,36 +32,35 @@
 		count?: number;
 	};
 
+	let moreOpen = $state(false);
 	const mailboxes = $derived<NavItem[]>([
 		{ href: '/inbox', icon: 'inbox-line', label: t('nav.inbox'), badge: counts.inbox_unread },
-		{
-			href: '/inbox?view=archive',
-			icon: 'archive-line',
-			label: t('nav.archive'),
-			count: counts.archive
-		},
-		{ href: '/drafts', icon: 'draft-line', label: t('nav.drafts'), count: counts.drafts },
-		{ href: '/sent', icon: 'send-plane-line', label: t('nav.sent') },
-		{ href: '/outbox', icon: 'time-line', label: t('nav.outbox') },
-		{ href: '/snoozed', icon: 'time-line', label: t('cleanup.snoozed') },
-		{ href: '/search', icon: 'search-line', label: t('common.search') },
 		{ href: '/starred', icon: 'star-line', label: t('nav.starred'), count: counts.starred },
-		{ href: '/spam', icon: 'spam-2-line', label: t('nav.spam'), count: counts.spam },
-		{ href: '/trash', icon: 'delete-bin-line', label: t('nav.trash'), count: counts.trash }
+		{ href: '/snoozed', icon: 'time-line', label: t('cleanup.snoozed') },
+		{ href: '/sent', icon: 'send-plane-line', label: t('nav.sent') },
+		{ href: '/drafts', icon: 'draft-line', label: t('nav.drafts'), count: counts.drafts }
 	]);
 
-	const tools = $derived<NavItem[]>([
-		{ href: '/contacts', icon: 'contacts-book-line', label: 'Contacts' },
-		{ href: '/calendar', icon: 'calendar-line', label: 'Calendar' },
-		{ href: '/tasks', icon: 'checkbox-circle-line', label: 'Tasks' },
-		{ href: '/tasks?kind=followup', icon: 'time-line', label: 'Waiting for reply' },
-		{ href: '/attachments', icon: 'attachment-2', label: 'Attachments' },
-		{ href: '/settings', icon: 'user-settings-line', label: t('nav.settings') },
+	const moreItems = $derived<NavItem[]>([
+		{ href: '/inbox?view=archive', icon: 'archive-line', label: t('nav.archive'), count: counts.archive },
+		{ href: '/outbox', icon: 'time-line', label: t('nav.outbox') },
+		{ href: '/spam', icon: 'spam-2-line', label: t('nav.spam'), count: counts.spam },
+		{ href: '/trash', icon: 'delete-bin-line', label: t('nav.trash'), count: counts.trash },
+		{ href: '/tasks?kind=followup', icon: 'time-line', label: t('nav.waitingForReply') },
+		{ href: '/attachments', icon: 'attachment-2', label: t('nav.attachments') },
+		{ href: '/search', icon: 'search-line', label: t('common.search') },
 		...(isAdmin ? [{ href: '/admin', icon: 'settings-3-line', label: t('nav.admin') }, { href: '/admin/maintenance', icon: 'pulse-line', label: t('nav.maintenance') }] : [])
 	]);
 
+	const activeMoreHref = $derived(moreItems.find((item) => isActive(item.href))?.href);
+	$effect(() => {
+		// Direct links and keyboard navigation reveal the selected folder.
+		if (activeMoreHref) moreOpen = true;
+	});
+
 	function isActive(href: string): boolean {
 		if (href === '/admin') return $page.url.pathname === '/admin';
+		if (href === '/inbox?view=archive' && $page.url.pathname === '/archive') return true;
 		const [pathname, query = ''] = href.split('?');
 		if ($page.url.pathname !== pathname && !$page.url.pathname.startsWith(`${pathname}/`)) {
 			return false;
@@ -86,6 +85,29 @@
 	}
 </script>
 
+{#snippet navLink(item: NavItem)}
+	<a
+		href={item.href}
+		class="nav-link"
+		class:active={isActive(item.href)}
+		aria-current={isActive(item.href) ? 'page' : undefined}
+		aria-label={item.label}
+		title={collapsed ? item.label : undefined}
+	>
+		<Icon name={item.icon} size={17} />
+		{#if !collapsed}
+			<span class="nav-label">{item.label}</span>
+			{#if item.badge}
+				<span class="nav-badge">{item.badge}</span>
+			{:else if item.count}
+				<span class="nav-count">{item.count}</span>
+			{/if}
+		{:else if item.badge}
+			<span class="nav-dot"></span>
+		{/if}
+	</a>
+{/snippet}
+
 <aside class="sidebar" class:collapsed>
 	<div class="sidebar-top">
 		<a href="/inbox" class="brand" title={APP_NAME}>
@@ -99,27 +121,28 @@
 		{#if !collapsed}<span>{t('nav.compose')}</span>{/if}
 	</a>
 
-	<nav class="nav">
+	<nav class="nav" aria-label={t('common.primaryNav')}>
 		{#each mailboxes as item (item.href)}
-			<a
-				href={item.href}
-				class="nav-link"
-				class:active={isActive(item.href)}
-				title={collapsed ? item.label : undefined}
-			>
-				<Icon name={item.icon} size={17} />
-				{#if !collapsed}
-					<span class="nav-label">{item.label}</span>
-					{#if item.badge}
-						<span class="nav-badge">{item.badge}</span>
-					{:else if item.count}
-						<span class="nav-count">{item.count}</span>
-					{/if}
-				{:else if item.badge}
-					<span class="nav-dot"></span>
-				{/if}
-			</a>
+			{@render navLink(item)}
 		{/each}
+		<button
+			type="button"
+			class="nav-link more-toggle"
+			class:active={!moreOpen && Boolean(activeMoreHref)}
+			aria-label={moreOpen ? t('common.less') : t('common.more')}
+			title={collapsed ? (moreOpen ? t('common.less') : t('common.more')) : undefined}
+			aria-expanded={moreOpen}
+			aria-controls="classic-more-nav"
+			onclick={() => (moreOpen = !moreOpen)}
+		>
+			<Icon name={moreOpen ? 'arrow-up-s-line' : 'arrow-down-s-line'} size={17} />
+			{#if !collapsed}<span class="nav-label">{moreOpen ? t('common.less') : t('common.more')}</span>{/if}
+		</button>
+		<div id="classic-more-nav" class="nav" hidden={!moreOpen}>
+			{#each moreItems as item (item.href)}
+				{@render navLink(item)}
+			{/each}
+		</div>
 	</nav>
 
 	{#if labels.length > 0}
@@ -150,18 +173,8 @@
 		</div>
 	{/if}
 
-	<nav class="nav nav-tools">
-		{#each tools as item (item.href)}
-			<a
-				href={item.href}
-				class="nav-link"
-				class:active={isActive(item.href)}
-				title={collapsed ? item.label : undefined}
-			>
-				<Icon name={item.icon} size={17} />
-				{#if !collapsed}<span class="nav-label">{item.label}</span>{/if}
-			</a>
-		{/each}
+	<nav class="nav nav-tools" aria-label={t('nav.settings')}>
+		{@render navLink({ href: '/settings', icon: 'user-settings-line', label: t('nav.settings') })}
 	</nav>
 
 	<div class="sidebar-foot">
@@ -252,6 +265,10 @@
 		flex-direction: column;
 		gap: 0.125rem;
 	}
+
+	.nav[hidden] { display: none; }
+	.more-toggle { width: 100%; text-align: left; cursor: pointer; }
+	.nav-link:focus-visible { outline: 2px solid var(--color-accent-text); outline-offset: -2px; }
 
 	.nav-tools {
 		margin-top: 0.75rem;

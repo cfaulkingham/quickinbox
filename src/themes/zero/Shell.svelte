@@ -6,6 +6,7 @@
 	import { t } from '$lib/i18n';
 	import type { ThemeShellProps } from '$lib/ui-theme/types';
 	import Tooltip from '$lib/components/Tooltip.svelte';
+	import OrganizerRail from '$lib/components/OrganizerRail.svelte';
 	import AccountHeader from './AccountHeader.svelte';
 	import Icon from './icons/Icon.svelte';
 	import CommandPalette from './overlays/CommandPalette.svelte';
@@ -20,6 +21,7 @@
 	let mobileOpen = $state(false);
 	let paletteOpen = $state(false);
 	let shortcutsOpen = $state(false);
+	let moreOpen = $state(false);
 	let chord = $state('');
 
 	const pathname = $derived($page.url.pathname);
@@ -85,56 +87,34 @@
 
 	type NavItem = { href: string; icon: string; label: string; badge?: number; shortcut?: string };
 
-	const mailNav = $derived<{ title: string; items: NavItem[] }[]>([
-		{
-			title: t('nav.core'),
-			items: [
-				{
-					href: '/inbox',
-					icon: 'Inbox',
-					label: t('nav.inbox'),
-					badge: data.counts.inbox_unread || undefined,
-					shortcut: 'g i'
-				},
-				{
-					href: '/drafts',
-					icon: 'Folder',
-					label: t('nav.drafts'),
-					badge: data.counts.drafts || undefined,
-					shortcut: 'g d'
-				},
-				{ href: '/sent', icon: 'Plane2', label: t('nav.sent'), shortcut: 'g t' },
-				{ href: '/outbox', icon: 'Plane2', label: t('nav.outbox') },
-				{ href: '/snoozed', icon: 'Clock', label: t('cleanup.snoozed') },
-				{ href: '/contacts', icon: 'Users', label: 'Contacts' },
-				{ href: '/calendar', icon: 'Calendar', label: 'Calendar' },
-				{ href: '/tasks', icon: 'Check', label: 'Tasks' },
-				{ href: '/tasks?kind=followup', icon: 'Clock', label: 'Waiting for reply' },
-				{ href: '/attachments', icon: 'ImageFile', label: 'Attachments' },
-				{ href: '/search', icon: 'Search', label: t('common.search') }
-			]
-		},
-		{
-			title: t('nav.management'),
-			items: [
-				{
-					href: '/archive',
-					icon: 'Archive',
-					label: t('nav.archive'),
-					badge: data.counts.archive || undefined,
-					shortcut: 'g a'
-				},
-				{
-					href: '/spam',
-					icon: 'Danger',
-					label: t('nav.spam'),
-					badge: data.counts.spam || undefined,
-					shortcut: 'g p'
-				},
-				{ href: '/trash', icon: 'Bin', label: t('nav.bin'), badge: data.counts.trash || undefined, shortcut: 'g b' }
-			]
-		}
+	const mailNav = $derived<NavItem[]>([
+		{ href: '/inbox', icon: 'Inbox', label: t('nav.inbox'), badge: data.counts.inbox_unread || undefined, shortcut: 'g i' },
+		{ href: '/starred', icon: 'Star2', label: t('nav.starred'), badge: data.counts.starred || undefined },
+		{ href: '/snoozed', icon: 'Clock', label: t('cleanup.snoozed') },
+		{ href: '/sent', icon: 'Plane2', label: t('nav.sent'), shortcut: 'g t' },
+		{ href: '/drafts', icon: 'Folder', label: t('nav.drafts'), badge: data.counts.drafts || undefined, shortcut: 'g d' }
 	]);
+
+	const moreNav = $derived<NavItem[]>([
+		{ href: '/archive', icon: 'Archive', label: t('nav.archive'), badge: data.counts.archive || undefined, shortcut: 'g a' },
+		{ href: '/outbox', icon: 'Plane2', label: t('nav.outbox') },
+		{ href: '/spam', icon: 'Danger', label: t('nav.spam'), badge: data.counts.spam || undefined, shortcut: 'g p' },
+		{ href: '/trash', icon: 'Bin', label: t('nav.bin'), badge: data.counts.trash || undefined, shortcut: 'g b' },
+		{ href: '/tasks?kind=followup', icon: 'Clock', label: t('nav.waitingForReply') },
+		{ href: '/attachments', icon: 'ImageFile', label: t('nav.attachments') },
+		{ href: '/search', icon: 'Search', label: t('common.search') }
+	]);
+
+	const organizerNav = $derived<NavItem[]>([
+		{ href: '/calendar', icon: 'Calendar', label: t('nav.calendar') },
+		{ href: '/tasks', icon: 'Check', label: t('nav.tasks') },
+		{ href: '/contacts', icon: 'Users', label: t('nav.contacts') }
+	]);
+
+	const activeMoreHref = $derived(moreNav.find((item) => isActive(item.href))?.href);
+	$effect(() => {
+		if (activeMoreHref) moreOpen = true;
+	});
 
 	const settingsNav = $derived<NavItem[]>([
 		{ href: '/inbox', icon: 'ArrowLeft', label: t('common.back') },
@@ -156,6 +136,9 @@
 		}
 		if (href.startsWith('/inbox?label=')) {
 			return $page.url.searchParams.get('label') === new URLSearchParams(href.split('?')[1]).get('label');
+		}
+		if (href === '/archive') {
+			return pathname === '/archive' || (pathname === '/inbox' && $page.url.searchParams.get('view') === 'archive' && !$page.url.searchParams.get('label'));
 		}
 		if (href === '/inbox') {
 			return (
@@ -287,6 +270,24 @@
 	}
 </script>
 
+{#snippet navLink(item: NavItem)}
+	<Tooltip text={item.label} shortcut={item.shortcut} side="right" enabled={collapsed && !mobileOpen} stretch>
+		<a
+			href={item.href}
+			class="z-nav-link"
+			class:active={isActive(item.href)}
+			aria-current={isActive(item.href) ? 'page' : undefined}
+			aria-label={collapsed && !mobileOpen ? item.label : undefined}
+		>
+			<Icon name={item.icon} size={16} />
+			{#if !collapsed || mobileOpen}
+				<span>{item.label}</span>
+				{#if item.badge}<span class="z-nav-badge">{item.badge}</span>{/if}
+			{/if}
+		</a>
+	</Tooltip>
+{/snippet}
+
 <svelte:window onkeydown={onKey} />
 
 <div
@@ -323,7 +324,7 @@
 			</Tooltip>
 		{/if}
 
-		<nav class="z-nav">
+		<nav class="z-nav" aria-label={t('common.primaryNav')}>
 			{#if settings}
 				{#each settingsNav as item (item.href)}
 					<a href={item.href} class="z-nav-link" class:active={isActive(item.href)}>
@@ -332,33 +333,36 @@
 					</a>
 				{/each}
 			{:else}
-				{#each mailNav as section (section.title)}
-					<div class="z-nav-section">
-						{#if !collapsed || mobileOpen}<div class="z-nav-title">{section.title}</div>{/if}
-						{#each section.items as item (item.href)}
-							<Tooltip
-								text={item.label}
-								shortcut={item.shortcut}
-								side="right"
-								enabled={collapsed && !mobileOpen}
-								stretch
-							>
-								<a
-									href={item.href}
-									class="z-nav-link"
-									class:active={isActive(item.href)}
-									aria-label={collapsed && !mobileOpen ? item.label : undefined}
-								>
-									<Icon name={item.icon} size={16} />
-									{#if !collapsed || mobileOpen}
-										<span>{item.label}</span>
-										{#if item.badge}<span class="z-nav-badge">{item.badge}</span>{/if}
-									{/if}
-								</a>
-							</Tooltip>
+				<div class="z-nav-section">
+					{#each mailNav as item (item.href)}
+						{@render navLink(item)}
+					{/each}
+					<Tooltip text={moreOpen ? t('common.less') : t('common.more')} side="right" enabled={collapsed && !mobileOpen} stretch>
+						<button
+							type="button"
+							class="z-nav-link z-more-toggle"
+							class:active={!moreOpen && Boolean(activeMoreHref)}
+							aria-label={moreOpen ? t('common.less') : t('common.more')}
+							aria-expanded={moreOpen}
+							aria-controls="zero-more-nav"
+							onclick={() => (moreOpen = !moreOpen)}
+						>
+							<span class="z-more-chevron" class:expanded={moreOpen}><Icon name="ChevronDown" size={16} /></span>
+							{#if !collapsed || mobileOpen}<span>{moreOpen ? t('common.less') : t('common.more')}</span>{/if}
+						</button>
+					</Tooltip>
+					<div id="zero-more-nav" class="z-more-nav" hidden={!moreOpen}>
+						{#each moreNav as item (item.href)}
+							{@render navLink(item)}
 						{/each}
 					</div>
-				{/each}
+				</div>
+				<div class="z-nav-section z-mobile-organizer">
+					<div class="z-nav-title">{t('nav.organizer')}</div>
+					{#each organizerNav as item (item.href)}
+						{@render navLink(item)}
+					{/each}
+				</div>
 				{#if data.labels.length > 0}
 					<div class="z-nav-section">
 						{#if !collapsed || mobileOpen}<div class="z-nav-title">{t('nav.labels')}</div>{/if}
@@ -420,6 +424,8 @@
 			{@render children()}
 		{/if}
 	</div>
+
+	<OrganizerRail theme="zero" />
 
 	<nav class="z-mobile-nav">
 		<Tooltip text="Contacts" side="top"><a href="/contacts" aria-label="Contacts"><Icon name="Users" size={18} /></a></Tooltip>

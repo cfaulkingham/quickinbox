@@ -25,6 +25,7 @@
 		"refresh": "Actualiser",
 		"remove": "Retirer",
 		"more": "Plus",
+		"less": "Moins",
 		"search": "Rechercher",
 		"filter": "Filtrer",
 		"select": "Sélectionner",
@@ -40,6 +41,13 @@
 		"open": "Ouvrir"
 	},
 	"nav": {
+		"calendar": "Agenda",
+		"tasks": "Tâches",
+		"contacts": "Contacts",
+		"contactsAddressBook": "Contacts / Carnet d’adresses",
+		"organizer": "Organisation",
+		"waitingForReply": "En attente de réponse",
+		"attachments": "Pièces jointes",
 		"inbox": "Boîte de réception",
 		"primary": "Principale",
 		"social": "Social",

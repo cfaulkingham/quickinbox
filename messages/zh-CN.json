@@ -25,6 +25,7 @@
 		"refresh": "刷新",
 		"remove": "移除",
 		"more": "更多",
+		"less": "收起",
 		"search": "搜索",
 		"filter": "筛选",
 		"select": "选择",
@@ -40,6 +41,13 @@
 		"open": "打开"
 	},
 	"nav": {
+		"calendar": "日历",
+		"tasks": "任务",
+		"contacts": "联系人",
+		"contactsAddressBook": "联系人 / 通讯录",
+		"organizer": "个人助理",
+		"waitingForReply": "等待回复",
+		"attachments": "附件",
 		"inbox": "收件箱",
 		"primary": "主要",
 		"social": "社交",

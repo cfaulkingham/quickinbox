@@ -37,6 +37,7 @@
 	--shadow-header: 0 1px 0 rgba(0, 0, 0, 0.05), 0 4px 16px rgba(0, 0, 0, 0.03);
 	--sidebar-width: 15.5rem;
 	--sidebar-width-collapsed: 4.25rem;
+	--organizer-rail-width: 3.5rem;
 	--topbar-height: 3.75rem;
 	--bottom-nav-height: 3.5rem;
 	--touch-target: 2.75rem;
