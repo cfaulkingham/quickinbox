@@ -3,6 +3,12 @@ import type { CloudflareSendEmailBinding } from '$lib/server/providers/cloudflar
 
 declare global {
 	interface Env {
+		CHAT_HUB?: CloudflareBindings['CHAT_HUB'];
+		CHAT_ENABLED?: string;
+		REALTIME_ACCOUNT_ID?: string;
+		REALTIME_APP_ID?: string;
+		REALTIME_PARTICIPANT_PRESET?: string;
+		REALTIME_API_TOKEN?: string;
 		DB: D1Database;
 		ATTACHMENTS: R2Bucket;
 		ASSETS: Fetcher;

@@ -1,4 +1,6 @@
 import { listTrustedImageSenders } from '$lib/server/image-privacy';
+import { chatEnabled } from '$lib/server/chat';
+import { callsConfigured } from '$lib/server/meetings';
 import type { LayoutServerLoad } from './$types';
 import { emptyMailboxCounts } from '$lib/mail/categories';
 import { listLabels } from '$lib/server/labels';
@@ -18,6 +20,8 @@ export const load: LayoutServerLoad = async ({ locals, platform }) => {
 
 	const trustedImageSenders = ready ? await listTrustedImageSenders(db!, locals.user!.id) : [];
 	return {
+		chatEnabled: !!platform && chatEnabled(platform.env),
+		callsEnabled: !!platform && callsConfigured(platform.env),
 		trustedImageSenders,
 		user: locals.user,
 		domains: locals.domains,

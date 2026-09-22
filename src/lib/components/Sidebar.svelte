@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/stores';
+	import { chatUnread } from '$lib/chat/client';
 	import Icon from './Icon.svelte';
 	import Logo from './Logo.svelte';
 	import DomainSwitcher from './DomainSwitcher.svelte';
@@ -34,6 +35,10 @@
 
 	let moreOpen = $state(false);
 	const mailboxes = $derived<NavItem[]>([
+		...($page.data.chatEnabled ? [
+			{ href: '/chat', icon: 'chat-3-line', label: 'Chat', badge: $chatUnread },
+			{ href: '/meetings', icon: 'vidicon-line', label: 'Meetings' }
+		] : []),
 		{ href: '/inbox', icon: 'inbox-line', label: t('nav.inbox'), badge: counts.inbox_unread },
 		{ href: '/starred', icon: 'star-line', label: t('nav.starred'), count: counts.starred },
 		{ href: '/snoozed', icon: 'time-line', label: t('cleanup.snoozed') },

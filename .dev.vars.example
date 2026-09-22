@@ -50,3 +50,13 @@ TYPESAFE_API_KEY=REPLACE_WITH_YOUR_TYPESAFE_API_KEY
 # Production: wrangler secret put MFA_ENCRYPTION_KEY
 # Do not rotate this key without re-encrypting existing user_mfa secrets.
 # MFA_ENCRYPTION_KEY=REPLACE_WITH_YOUR_BASE64_ENCRYPTION_KEY
+
+# --- Chat and WebRTC meetings ---
+# Chat works without calling credentials. Set CHAT_ENABLED=false to disable both.
+# CHAT_ENABLED=true
+# Create a RealtimeKit app and a participant preset in Cloudflare (see README).
+# REALTIME_ACCOUNT_ID=
+# REALTIME_APP_ID=
+# REALTIME_PARTICIPANT_PRESET=
+# Production token: bunx wrangler secret put REALTIME_API_TOKEN
+# REALTIME_API_TOKEN=

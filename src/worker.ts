@@ -1,4 +1,7 @@
 import { refreshSubscriptions } from './lib/server/calendar-subscriptions';
+import { chatSocket } from './lib/server/chat-socket';
+import { closeExpiredMeetings } from './lib/server/meetings';
+export { ChatHub } from './lib/server/chat-hub';
 import { sendTaskReminders } from './lib/server/tasks';
 import { processVacation } from './lib/server/vacation';
 import { deploymentPolicyResponse } from './lib/server/deployment-policy';
@@ -32,6 +35,7 @@ export default {
 		const pathname = new URL(request.url).pathname;
 		const blocked = deploymentPolicyResponse(pathname, env);
 		if (blocked) return blocked;
+		if (pathname === '/api/chat/socket') return chatSocket(request, env);
 		if (typeof svelteApp.fetch !== 'function') {
 			throw new Error('SvelteKit worker export is missing fetch');
 		}
@@ -55,6 +59,7 @@ export default {
 			)
 		);
 		await Promise.all([
+			closeExpiredMeetings(env),
 			wakeSnoozedMail(env.DB),
 			flushOutbox(env, provider),
 			sendCalendarReminders(env),

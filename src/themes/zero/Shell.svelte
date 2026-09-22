@@ -2,6 +2,7 @@
 	import { afterNavigate, goto, replaceState } from '$app/navigation';
 	import { untrack } from 'svelte';
 	import { page } from '$app/stores';
+	import { chatUnread } from '$lib/chat/client';
 	import { logoutAccount } from '$lib/account-switch';
 	import { t } from '$lib/i18n';
 	import type { ThemeShellProps } from '$lib/ui-theme/types';
@@ -106,6 +107,10 @@
 	]);
 
 	const organizerNav = $derived<NavItem[]>([
+		...($page.data.chatEnabled ? [
+			{ href: '/chat', icon: 'MessageSquare', label: 'Chat', badge: $chatUnread || undefined },
+			{ href: '/meetings', icon: 'Users', label: 'Meetings' }
+		] : []),
 		{ href: '/calendar', icon: 'Calendar', label: t('nav.calendar') },
 		{ href: '/tasks', icon: 'Check', label: t('nav.tasks') },
 		{ href: '/contacts', icon: 'Users', label: t('nav.contacts') }

@@ -32,6 +32,7 @@ import {
 } from '$lib/i18n/locales';
 
 const PUBLIC_PREFIXES = [
+	'/meet',
 	'/calendar-feed',
 	'/login',
 	'/setup',

@@ -289,6 +289,85 @@ apex MX at both.
 Pick Resend if your DNS lives elsewhere or you already use it. Pick Cloudflare
 Email if the zone is already on Cloudflare and you want everything on one account.
 
+## Chat and video meetings
+
+Chat supports direct messages and groups of up to eight accounts on this server,
+saved message history, unread badges, typing and online indicators, and a floating
+panel alongside mail. Audio/video calls, screen sharing, guest links, and calendar
+meeting links use Cloudflare RealtimeKit. Chat works without calling credentials;
+call controls stay disabled until the provider is configured.
+
+Apply `0032_chat_meetings.sql` before serving this version. Keep the `CHAT_HUB`
+Durable Object binding, the `chat-v1` SQLite Durable Object migration, and the
+existing minute Cron Trigger in `wrangler.jsonc`. `bun run deploy` applies the D1
+migrations and deploys the Worker. For an existing deployment with other Durable
+Object migrations, append `chat-v1` to its migration history. Preserve your own
+Worker name, routes, database, bucket, and account settings.
+
+If your private `wrangler.jsonc` does not yet have the chat bindings, merge these
+fields into it (append the migration when you already have migration history):
+
+```jsonc
+{
+  "vars": {
+    "CHAT_ENABLED": "true"
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "CHAT_HUB", "class_name": "ChatHub" }]
+  },
+  "migrations": [{ "tag": "chat-v1", "new_sqlite_classes": ["ChatHub"] }]
+}
+```
+
+Preserve existing vars and bindings when merging. The calling credentials below
+belong in your private configuration and Worker secrets.
+
+To enable calling:
+
+1. [Create a RealtimeKit app](https://developers.cloudflare.com/realtime/realtimekit/)
+   in the Cloudflare account that will handle your calls.
+2. Create a group-call participant preset with audio, video, and screen sharing
+   enabled. Use a normal participant role, with recording and administrative
+   permissions disabled. Every attendee, including the owner, uses this preset;
+   only the owner can end the meeting through Quickinbox.
+3. Set `REALTIME_ACCOUNT_ID`, `REALTIME_APP_ID`, and
+   `REALTIME_PARTICIPANT_PRESET` (the preset's **name**) in the Worker vars.
+   Create a Cloudflare API token scoped to this account with **Realtime / Realtime
+   Admin** permissions ([token setup](https://developers.cloudflare.com/realtime/realtimekit/quickstart/)),
+   and store it with `bunx wrangler secret put REALTIME_API_TOKEN`.
+   For local development, put these values in the gitignored `.dev.vars` file.
+4. Deploy and test a call between two browsers, including device selection,
+   reconnecting, screen sharing, and **End for everyone**. Calling uses the
+   provider's billing and service limits. Production calls need HTTPS.
+
+Start a private call from a conversation. **Meetings** creates guest links only
+after you opt into allowing anyone with the link to join. Guest names are
+self-reported. Links expire after 1, 7, or 30 days; calls started in Chat expire
+after 24 hours. Calendar's **Add video meeting** creates a guest link valid for
+30 days; it remains in Meetings if the calendar edit is canceled. Create a fresh
+link for events outside that period.
+
+Ending a meeting blocks new joins immediately and asks RealtimeKit to deactivate
+the meeting and disconnect participants. The minute scheduler retries failed
+shutdowns and closes expired meetings, meetings whose owner was deleted, and
+all meetings when `CHAT_ENABLED` is `"false"`. Keep the provider credentials
+configured until cleanup has completed. Disabling chat also closes authenticated
+chat sockets at their next event or minute session check.
+
+Messages are stored in D1, protected by conversation membership, and rendered as
+plain text. Chat is for accounts on this installation; it does not federate with
+Google Chat or email recipients. Attachments, editing/deleting messages, changing
+group membership, and recording are outside this first version. Live events use
+authenticated, same-origin WebSockets; history and unread counts also refresh
+through HTTP if the socket is temporarily unavailable. Existing Web Push setup
+can notify recipients without including message bodies.
+
+Use `bun run preview` for the full Worker, including Durable Objects. Vite's
+development server alone does not run the Worker's WebSocket upgrade wrapper.
+Run `bun run cf-typegen` after changing Cloudflare bindings. The server tests
+cover conversation privacy, retries, pagination, cookie authentication, guest
+access, join limits, and meeting shutdown; provider tests mock the external API.
+
 ## Manual setup
 
 Only needed if you cannot run the wizard.

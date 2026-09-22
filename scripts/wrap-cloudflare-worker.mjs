@@ -33,5 +33,6 @@ await writeFile(
 	generated,
 	`/* ${MARKER} */
 export { default } from '../../src/worker.ts';
+export { ChatHub } from '../../src/worker.ts';
 `
 );

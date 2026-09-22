@@ -1,11 +1,16 @@
 <script lang="ts">
 	import { page } from '$app/stores';
+	import { chatUnread } from '$lib/chat/client';
 	import { t } from '$lib/i18n';
 	import Icon from './Icon.svelte';
 	import Tooltip from './Tooltip.svelte';
 
 	let { theme = 'classic' }: { theme?: 'classic' | 'zero' } = $props();
 	const items = $derived([
+		...($page.data.chatEnabled ? [
+			{ href: '/chat', icon: 'chat-3-line', label: 'Chat' },
+			{ href: '/meetings', icon: 'video-chat-line', label: 'Meetings' }
+		] : []),
 		{ href: '/calendar', icon: 'calendar-line', label: t('nav.calendar') },
 		{ href: '/tasks', icon: 'checkbox-circle-line', label: t('nav.tasks') },
 		{ href: '/contacts', icon: 'contacts-book-line', label: t('nav.contacts'), tooltip: t('nav.contactsAddressBook') }
@@ -18,6 +23,7 @@
 		<Tooltip text={item.tooltip ?? item.label} side="left">
 			<a href={item.href} class="rail-link" class:active aria-label={item.label} aria-current={active ? 'page' : undefined}>
 				<Icon name={item.icon} size={21} />
+				{#if item.href === '/chat' && $chatUnread}<span class="unread">{$chatUnread > 99 ? '99+' : $chatUnread}</span>{/if}
 			</a>
 		</Tooltip>
 	{/each}
@@ -52,6 +58,7 @@
 		transition: background 0.15s, color 0.15s;
 	}
 	.rail-link:hover { background: var(--color-surface-hover); color: var(--color-text); }
+	.unread { position: absolute; top: -3px; right: -5px; font-size: 9px; padding: 2px 5px; border-radius: 12px; background: var(--color-accent); color: var(--color-accent-foreground, white); }
 	.rail-link.active { background: var(--color-accent-soft); color: var(--color-accent-text); }
 	.rail-link.active::after {
 		content: '';

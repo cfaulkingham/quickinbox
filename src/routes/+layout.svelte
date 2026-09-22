@@ -17,6 +17,7 @@
 	import MailActionNotice from '$lib/components/MailActionNotice.svelte';
 	import OutboxNotice from '$lib/components/OutboxNotice.svelte';
 	import TaskReminderNotice from '$lib/organizer/TaskReminderNotice.svelte';
+	import ChatLive from '$lib/chat/ChatLive.svelte';
 	import ReminderNotice from '$lib/organizer/ReminderNotice.svelte';
 	import MailboxLiveSync from '$lib/components/MailboxLiveSync.svelte';
 	import type { ThemeShellData } from '$lib/ui-theme/types';
@@ -26,6 +27,7 @@
 
 	const showShell = $derived(
 		Boolean(data.user) &&
+			!$page.url.pathname.startsWith('/meet/') &&
 			$page.url.pathname !== '/onboarding' &&
 			$page.url.pathname !== '/account/setup' &&
 			// Signed-in users reach /login only to add another account; it is a
@@ -98,6 +100,7 @@
 </svelte:head>
 
 {#if showShell && shellData}
+	{#if data.chatEnabled}{#key data.user?.id}<ChatLive userId={data.user!.id} callsEnabled={data.callsEnabled} />{/key}{/if}
 	<MailboxLiveSync />
 	{#key data.user?.id}<OutboxNotice /><MailActionNotice /><ReminderNotice /><TaskReminderNotice />{/key}
 	<ThemeShell data={shellData}>

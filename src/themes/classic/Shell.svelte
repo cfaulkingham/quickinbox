@@ -25,7 +25,7 @@
 	const stacked = $derived(isStackedPath($page.url.pathname));
 	const mailbox = $derived(isMailboxPath($page.url.pathname));
 	const utility = $derived(isUtilityPath($page.url.pathname));
-	const organizer = $derived($page.url.pathname === '/contacts' || $page.url.pathname === '/calendar');
+	const organizer = $derived(['/contacts', '/calendar', '/chat', '/meetings'].includes($page.url.pathname));
 	const canSplit = $derived(mailbox && $page.url.pathname !== '/drafts');
 	let layout = $state<SplitLayout>('none');
 	setContext<ClassicLayoutContext>(CLASSIC_LAYOUT, { get value() { return layout; } });

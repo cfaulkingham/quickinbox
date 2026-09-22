@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack, onMount, onDestroy } from 'svelte';
+	import { page } from '$app/stores';
 	import { Temporal } from '@js-temporal/polyfill';
 	import { eventReminders } from './recurrence';
 	import ReminderPicker from './ReminderPicker.svelte';
@@ -42,6 +43,19 @@
 	let title = $state(original?.title || initial?.title || '');
 	let description = $state(original?.description || initial?.description || '');
 	let location = $state(original?.location || '');
+	let meetingBusy = $state(false);
+	async function addVideoMeeting() {
+		meetingBusy = true;
+		error = '';
+		try {
+			const result = await organizerRequest<{ meeting: { id: string } }>('/api/meetings', 'POST', {
+				title: title.trim() || 'Calendar meeting', guestsAllowed: true,
+				expiresAt: new Date(Date.now() + 30 * 86400_000).toISOString()
+			});
+			location = `${window.location.origin}/meet/${result.meeting.id}`;
+		} catch (cause) { error = (cause as Error).message; }
+		finally { meetingBusy = false; }
+	}
 	let allDay = $state(original?.allDay ?? false);
 	let start = $state(
 		original?.startLocal ??
@@ -291,7 +305,7 @@
 			Organizer: {original?.organizer.name || original?.organizer.email}<br />{original?.organizer
 				.email}
 		</p>
-		{#if location}<p>{location}</p>{/if}{#if description}<p class="description">
+		{#if location}<p>{#if /^https?:\/\//i.test(location)}<a href={location} target="_blank" rel="noopener noreferrer">{location}</a>{:else}{location}{/if}</p>{/if}{#if description}<p class="description">
 				{description}
 			</p>{/if}
 		{#if !original?.cancelled && !original?.shared && !original?.subscription}<p>
@@ -392,6 +406,7 @@
 				/></label
 			>
 			<label>Description<textarea bind:value={description} maxlength="8000"></textarea></label>
+			{#if $page.data.callsEnabled && !location}<div><button type="button" disabled={busy || meetingBusy} onclick={addVideoMeeting}>{meetingBusy ? 'Creating meeting…' : 'Add video meeting'}</button><p class="subtle">Creates a guest link valid for 30 days. Anyone with the invitation link can join.</p></div>{/if}
 			{#if !scoped}
 				{#if Object.keys(master?.exceptions ?? {}).length}<label class="check"
 						><input type="checkbox" bind:checked={resetExceptions} />Reset occurrence edits if

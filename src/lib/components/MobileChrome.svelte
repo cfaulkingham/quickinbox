@@ -154,6 +154,7 @@
 	>
 		<div class="sheet-handle" aria-hidden="true"></div>
 		<nav class="sheet-nav">
+			{#if $page.data.chatEnabled}<a href="/chat" class="sheet-link"><Icon name="chat-3-line" size={20} /><span>Chat</span></a><a href="/meetings" class="sheet-link"><Icon name="vidicon-line" size={20} /><span>Meetings</span></a>{/if}
 			<a href="/contacts" class="sheet-link"><Icon name="contacts-book-line" size={20} /><span>Contacts</span></a>
 			<a href="/tasks" class="sheet-link"><Icon name="checkbox-circle-line" size={20} /><span>Tasks</span></a>
 			<a href="/tasks?kind=followup" class="sheet-link"><Icon name="time-line" size={20} /><span>Waiting for reply</span></a>
