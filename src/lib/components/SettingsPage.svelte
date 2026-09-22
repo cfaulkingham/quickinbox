@@ -24,6 +24,7 @@
 	import LocalePicker from './LocalePicker.svelte';
 	import LabelsSettings from './LabelsSettings.svelte';
 	import MailTransferSettings from './MailTransferSettings.svelte';
+	import VacationSettings from './VacationSettings.svelte';
 	import SenderRulesSettings from './SenderRulesSettings.svelte';
 	import ImagePrivacySettings from './ImagePrivacySettings.svelte';
 	import TwoFactorSettings from './TwoFactorSettings.svelte';
@@ -698,6 +699,7 @@
 
 	{#if show('general')}
 	<ImagePrivacySettings />
+	<VacationSettings addresses={$page.data.addresses ?? []} />
 	<SenderRulesSettings labels={($page.data.labels ?? []) as MailLabel[]} />
 	{#key $page.data.user?.id}<TwoFactorSettings status={data.mfa} />{/key}
 	<section class="surface-lg card">

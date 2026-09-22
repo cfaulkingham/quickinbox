@@ -204,8 +204,16 @@ export function invitationFile(
 		if (event.recurrence && !event.allDay) prop.setParameter('tzid', event.timeZone);
 		item.addProperty(prop);
 	}
-	if (event.recurrence)
-		item.addPropertyWithValue('rrule', ICAL.Recur.fromString(recurrenceRule(event.recurrence)));
+	if (event.recurrence) {
+    let rule = event.recurrence;
+    if (rule.until && !event.allDay && !rule.until.includes('T')) {
+      const compact = rule.until.replaceAll('-','');
+      const local = `${compact.slice(0,4)}-${compact.slice(4,6)}-${compact.slice(6,8)}T23:59:59`;
+      const until = Temporal.PlainDateTime.from(local).toZonedDateTime(event.timeZone).toInstant().toString({smallestUnit:'second'}).replaceAll('-','').replaceAll(':','');
+      rule = {...rule,until};
+    }
+    item.addPropertyWithValue('rrule', ICAL.Recur.fromString(recurrenceRule(rule)));
+  }
 
 	if (event.organizer.email) {
 		const organizer = new ICAL.Property('organizer');
@@ -369,7 +377,7 @@ export function calendarFile(events: CalendarEvent[]) {
 	}
 	return root.toString() + '\r\n';
 }
-export function calendarImportSources(source: string) {
+export function calendarImportSources(source: string, allowEmpty = false) {
 	const root = calendarRoot(source);
 	const groups = new Map<string, ICAL.Component[]>();
 	for (const part of root.getAllSubcomponents('vevent')) {
@@ -378,7 +386,7 @@ export function calendarImportSources(source: string) {
 		group.push(part);
 		groups.set(uid, group);
 	}
-	if (!groups.size || groups.size > 500)
+	if ((!allowEmpty && !groups.size) || groups.size > 500)
 		throw new Error('Choose a file containing 1–500 events or series.');
 	let bytes = 0;
 	return [...groups.values()].map((parts) => {

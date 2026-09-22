@@ -10,11 +10,14 @@ export type Contact = {
 	birthday: string;
 	groups: string[];
 };
-export type PersonalCalendar = { id: string; name: string; color: string };
+export type PersonalCalendar = { id: string; name: string; color: string; access?: 'owner' | 'read' | 'write' };
 export type Recurrence = {
 	frequency: 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
 	interval: number;
-	count: number;
+	count?: number;
+	until?: string;
+	byDay?: string[];
+	weekStart?: string;
 };
 export type EventException = Pick<
 	CalendarEvent,
@@ -38,6 +41,9 @@ export type CalendarEvent = {
 	organizer: { email: string; name: string };
 	guests: CalendarGuest[];
 	owned: boolean;
+	shared?: boolean;
+	subscription?: boolean;
+	access?: 'read' | 'write';
 	fromAddressId: string | null;
 	sourceEmailId: string | null;
 	response: Attendance;

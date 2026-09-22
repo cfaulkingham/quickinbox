@@ -61,6 +61,10 @@
 
 <div class="message-organizer">
 	<div class="links">
+		<a href={`/tasks?email=${encodeURIComponent(message.id)}`}>Create task</a>
+		{#if message.direction === 'outbound' && ['sent', 'delivered', 'delayed'].includes(message.status ?? '')}
+			<a href={`/tasks?kind=followup&email=${encodeURIComponent(message.id)}`}>Remind if no reply</a>
+		{/if}
 		<a href={`/calendar?email=${encodeURIComponent(message.id)}`}>Create event</a
 		>{#if sender && message.direction === 'inbound'}<a
 				href={`/contacts?email=${encodeURIComponent(sender.email)}&name=${encodeURIComponent(message.from_name || sender.name)}`}

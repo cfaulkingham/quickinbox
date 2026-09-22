@@ -1,3 +1,4 @@
+import { vacationRecipient } from './vacation';
 import { recordOperationalFailure } from './operational-events';
 import type { R2Bucket } from '@cloudflare/workers-types';
 import PostalMime, { type Address, type Attachment } from 'postal-mime';
@@ -52,7 +53,8 @@ export async function handleCloudflareInbound(
 
 	const sender = firstMailboxIdentity(parsed.from);
 	const from = inboundSender(sender?.address, message.from);
-	const subject = parsed.subject?.trim() || message.headers.get('subject')?.trim() || '(no subject)';
+	const subject =
+		parsed.subject?.trim() || message.headers.get('subject')?.trim() || '(no subject)';
 	const messageId =
 		normalizeMessageId(parsed.messageId ?? message.headers.get('message-id')) ?? null;
 	const inReplyTo =
@@ -106,7 +108,16 @@ export async function handleCloudflareInbound(
 		references,
 		domainId: route.domainId,
 		addressId: route.addressId,
-		providerId
+		providerId,
+		vacationRecipient: vacationRecipient(
+			message.headers,
+			from,
+			!route.viaCatchall &&
+				[...mailboxAddresses(parsed.to), ...mailboxAddresses(parsed.cc)].some(
+					(a) => a.toLowerCase() === route.address.toLowerCase()
+				),
+			message.from
+		)
 	});
 
 	const storedAttachments = await storeInboundAttachments(env, emailId, parsed.attachments);
@@ -163,7 +174,11 @@ export async function storeInboundAttachments(
 			});
 		} catch (error) {
 			console.error('Failed to store inbound Cloudflare attachment', attachment.filename, error);
-			await recordOperationalFailure(env.DB, 'inbound', 'An incoming attachment could not be stored. The message was kept.');
+			await recordOperationalFailure(
+				env.DB,
+				'inbound',
+				'An incoming attachment could not be stored. The message was kept.'
+			);
 		}
 	}
 
@@ -218,7 +233,8 @@ function firstMailboxIdentity(
 	const list = Array.isArray(value) ? value : [value];
 
 	for (const item of list) {
-		if (item.address) return { name: item.name?.trim() || null, address: parseEmailAddress(item.address) };
+		if (item.address)
+			return { name: item.name?.trim() || null, address: parseEmailAddress(item.address) };
 		if (item.group) {
 			for (const member of item.group) {
 				if (member.address) {
@@ -255,6 +271,8 @@ async function inboundProviderId(input: {
 
 	const material = `${input.from}\n${input.to}\n${input.date ?? ''}`;
 	const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(material));
-	const hex = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+	const hex = [...new Uint8Array(digest)]
+		.map((byte) => byte.toString(16).padStart(2, '0'))
+		.join('');
 	return `cf-${hex.slice(0, 32)}`;
 }

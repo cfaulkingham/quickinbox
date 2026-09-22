@@ -1,3 +1,4 @@
+import { expandEvent } from '$lib/organizer/recurrence';
 import type { D1Database } from '@cloudflare/workers-types';
 import { error } from '@sveltejs/kit';
 import { z } from 'zod';
@@ -21,7 +22,7 @@ export function previewCalendar(source: string, timeZone: string) {
 			const { event, method } = parseInvitation(source, timeZone);
 			if (event.cancelled || method === 'CANCEL' || method === 'REPLY')
 				throw new Error('Cancelled events and RSVP messages are not imported.');
-			events.push({ source, title: event.title, count: event.recurrence?.count ?? 1 });
+			events.push({ source, title: event.title, count: expandEvent(event).length });
 		} catch (cause) {
 			issues.push({ row: index + 1, message: (cause as Error).message });
 		}

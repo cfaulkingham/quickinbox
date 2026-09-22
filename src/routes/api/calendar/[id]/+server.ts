@@ -1,3 +1,4 @@
+import { visibleCalendarEvent } from '$lib/server/calendar-access';
 import { expandEvent } from '$lib/organizer/recurrence';
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
@@ -15,7 +16,7 @@ import { invitationFile } from '$lib/server/calendar-ical';
 import { organizerBody, organizerJson, organizerSession } from '$lib/server/organizer-http';
 export const GET: RequestHandler = async (event) => {
 	const { env, user } = organizerSession(event);
-	const saved = await getCalendarEvent(env.DB, user.id, event.params.id);
+	const saved = await visibleCalendarEvent(env.DB, user.id, event.params.id);
 	if (!saved) throw error(404, 'Event not found');
 	if (event.url.searchParams.get('download') === '1')
 		return new Response(invitationFile(saved, 'PUBLISH'), {
@@ -90,6 +91,7 @@ export const PATCH: RequestHandler = async (event) => {
 	}
 	const previous = await getCalendarEvent(env.DB, user.id, event.params.id);
 	if (!previous) throw error(404, 'Event not found');
+	if (previous.subscription) throw error(403, 'Subscribed calendars are read-only.');
 	if (raw?.retryNotices === true) {
 		await env.DB.prepare(
 			`UPDATE calendar_notices SET state = 'pending', attempts = 0, next_attempt_at = 0 WHERE event_id = ? AND user_id = ? AND state = 'failed'`

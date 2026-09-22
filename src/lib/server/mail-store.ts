@@ -56,6 +56,7 @@ export async function insertEmail(
 		domainId?: string | null;
 		addressId?: string | null;
 		providerId?: string | null;
+		vacationRecipient?: string | null;
 		status?: MailStatus | null;
 		isRead?: boolean;
 		/** Disable fallback grouping when this message must start a conversation. */
@@ -88,8 +89,8 @@ export async function insertEmail(
 				id, user_id, direction, from_addr, from_name, to_addr, cc_addr, bcc_addr, subject,
 				body_text, body_html, message_id, in_reply_to, references_header,
 				reply_to_email_id, thread_id, thread_key,
-				domain_id, address_id, provider_id, status, status_at, is_read
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)`
+				domain_id, address_id, provider_id, status, status_at, is_read, vacation_recipient, is_live_inbound
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, ?)`
 		)
 		.bind(
 			id,
@@ -113,7 +114,9 @@ export async function insertEmail(
 			input.addressId ?? null,
 			input.providerId ?? null,
 			input.status ?? null,
-			input.isRead ? 1 : 0
+			input.isRead ? 1 : 0,
+			input.vacationRecipient ?? null,
+			input.direction === 'inbound' ? 1 : 0
 		)
 		.run();
 

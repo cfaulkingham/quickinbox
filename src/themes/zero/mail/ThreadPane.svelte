@@ -1,4 +1,8 @@
 <script lang="ts">
+	import AttachmentPreview from '$lib/components/AttachmentPreview.svelte';
+	import { isPreviewableInline } from '$lib/utils/attachments';
+	import type { EmailAttachmentMeta } from '$lib/types';
+	let preview = $state<{ emailId: string; file: EmailAttachmentMeta } | null>(null);
 	import MessageOrganizer from '$lib/organizer/MessageOrganizer.svelte';
 	import { contactSuggestions } from '$lib/organizer/contact-suggestions';
 	import SnoozeControl from '$lib/components/SnoozeControl.svelte';
@@ -96,6 +100,7 @@
 			return;
 		}
 		let cancelled = false;
+		preview = null;
 		loading = true;
 		error = '';
 		replyOpen = false;
@@ -728,6 +733,12 @@
 										<a
 											class="z-attach-file"
 											href={attachmentHref(message.id, file.id)}
+											onclick={(event) => {
+												if (isPreviewableInline(file.content_type)) {
+													event.preventDefault();
+													preview = { emailId: message.id, file };
+												}
+											}}
 											target="_blank"
 											rel="noopener noreferrer"
 										>
@@ -831,4 +842,8 @@
 			{/if}
 		</div>
 	</div>
+{/if}
+
+{#if preview}
+	<AttachmentPreview emailId={preview.emailId} file={preview.file} onClose={() => (preview = null)} />
 {/if}

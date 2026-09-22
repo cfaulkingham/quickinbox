@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AttachmentPreview from './AttachmentPreview.svelte';
 	import Icon from './Icon.svelte';
 	import { formatFileSize } from '$lib/utils/html';
 	import {
@@ -21,6 +22,7 @@
 		/** Drops the divider/spacing so it can sit inside a reply bubble. */
 		compact?: boolean;
 	} = $props();
+	let preview = $state<EmailAttachmentMeta | null>(null);
 </script>
 
 {#if attachments.length > 0}
@@ -36,6 +38,10 @@
 					<figure class="attachment-image">
 						<a
 							href={attachmentHref(emailId, file.id)}
+							onclick={(event) => {
+								event.preventDefault();
+								preview = file;
+							}}
 							target="_blank"
 							rel="noopener noreferrer"
 							class="image-link"
@@ -72,12 +78,16 @@
 							{#if isPreviewableInline(file.content_type)}
 								<a
 									href={attachmentHref(emailId, file.id)}
+									onclick={(event) => {
+										event.preventDefault();
+										preview = file;
+									}}
 									target="_blank"
 									rel="noopener noreferrer"
 									class="action"
 								>
 									<Icon name="external-link-line" size={14} />
-									{t('common.open')}
+									Preview
 								</a>
 							{/if}
 							<a
@@ -94,6 +104,10 @@
 			{/each}
 		</div>
 	</section>
+{/if}
+
+{#if preview}
+	<AttachmentPreview {emailId} file={preview} onClose={() => (preview = null)} />
 {/if}
 
 <style>

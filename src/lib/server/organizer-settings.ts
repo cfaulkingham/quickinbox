@@ -7,9 +7,9 @@ export async function organizerSettings(db: D1Database, userId: string) {
 	const [calendars, prefs] = await Promise.all([
 		db
 			.prepare(
-				'SELECT id, name, color FROM personal_calendars WHERE user_id = ? ORDER BY name COLLATE NOCASE'
+				`SELECT c.id,c.name,c.color, CASE WHEN c.user_id=? THEN 'owner' ELSE s.permission END AS access FROM personal_calendars c LEFT JOIN calendar_shares s ON s.calendar_id=c.id AND s.user_id=? WHERE c.user_id=? OR s.user_id IS NOT NULL ORDER BY c.name COLLATE NOCASE`
 			)
-			.bind(userId)
+			.bind(userId,userId,userId)
 			.all<PersonalCalendar>(),
 		db
 			.prepare('SELECT time_zone FROM organizer_preferences WHERE user_id = ?')

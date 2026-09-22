@@ -7,6 +7,8 @@
 	import { organizerRequest } from '$lib/organizer/client';
 	import { validTimeZone } from '$lib/organizer/dates';
 	import WeekGrid from '$lib/organizer/WeekGrid.svelte';
+	import CalendarSubscriptions from '$lib/organizer/CalendarSubscriptions.svelte';
+	import CalendarSharing from '$lib/organizer/CalendarSharing.svelte';
 	import CalendarTransfer from '$lib/organizer/CalendarTransfer.svelte';
 	import EventEditor from '$lib/organizer/EventEditor.svelte';
 	import '$lib/organizer/organizer.css';
@@ -320,6 +322,8 @@
 					>Add calendar</button
 				>
 			</form>
+			<CalendarSharing {calendars} />
+			<CalendarSubscriptions onChange={() => {void organizerRequest<{calendars:PersonalCalendar[]}>('/api/calendar/settings').then(r => {calendars=r.calendars;void load();}).catch(c => error=c.message);}} />
 		</section>{/if}
 	{#if transferring}<CalendarTransfer
 			timeZone={zone}
@@ -468,6 +472,9 @@
 
 <style>
 	.settings-panel {
+		max-height: 65vh;
+		overflow: auto;
+		flex-shrink: 0;
 		display: flex;
 		flex-wrap: wrap;
 		gap: 24px;

@@ -70,6 +70,21 @@
 	let frequency = $state<Recurrence['frequency'] | ''>(original?.recurrence?.frequency ?? '');
 	let interval = $state(original?.recurrence?.interval ?? 1),
 		count = $state(original?.recurrence?.count ?? 10);
+	let repeatEnd = $state(original?.recurrence?.until ? 'date' : 'count');
+	const originalUntil = original?.recurrence?.until;
+	const initialUntil = originalUntil?.includes('T')
+		? Temporal.Instant.from(
+				originalUntil.replace(
+					/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/,
+					'$1-$2-$3T$4:$5:$6Z'
+				)
+			)
+				.toZonedDateTimeISO(original?.timeZone || 'UTC')
+				.toPlainDate()
+				.toString()
+		: (originalUntil ?? '').replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3');
+	let until = $state(initialUntil);
+	let byDay = $state<string[]>(original?.recurrence?.byDay ?? []);
 	let scope = $state<'this' | 'future' | 'all'>(original?.occurrenceKey ? 'this' : 'all');
 	const scoped = $derived(!!original?.recurrence && scope !== 'all');
 	function changeScope() {
@@ -120,7 +135,9 @@
 		}[]
 	>([]);
 	let zones = $state<string[]>(['UTC']);
-	const readOnly = Boolean(original && (!original.owned || original.cancelled));
+	const readOnly = Boolean(
+		original && (!original.owned || original.cancelled || original.access === 'read')
+	);
 	let detailVersion = $state(original?.version ?? 0);
 	onMount(() => {
 		zones = ['UTC', ...Intl.supportedValuesOf('timeZone')];
@@ -181,7 +198,17 @@
 					reminders,
 					calendarId: calendarId || null,
 					recurrence: frequency
-						? { frequency, interval: Number(interval), count: Number(count) }
+						? {
+								frequency,
+								interval: Number(interval),
+								...(repeatEnd === 'date'
+									? { until: until === initialUntil ? (originalUntil ?? until) : until }
+									: { count: Number(count) }),
+								...(['DAILY', 'WEEKLY'].includes(frequency) && byDay.length ? { byDay } : {}),
+								...(original?.recurrence?.weekStart
+									? { weekStart: original.recurrence.weekStart }
+									: {})
+							}
 						: null,
 					scope,
 					occurrenceKey: original?.occurrenceKey,
@@ -267,7 +294,7 @@
 		{#if location}<p>{location}</p>{/if}{#if description}<p class="description">
 				{description}
 			</p>{/if}
-		{#if !original?.cancelled}<p>
+		{#if !original?.cancelled && !original?.shared && !original?.subscription}<p>
 				Your response: <strong
 					>{original?.response.replace('NEEDS-ACTION', 'Not yet responded').toLowerCase()}</strong
 				>
@@ -371,8 +398,9 @@
 						changing the series schedule</label
 					>{/if}
 				<label
-					>Calendar<select bind:value={calendarId}
-						><option value="">Personal</option>{#each calendars as calendar}<option
+					>Calendar<select bind:value={calendarId} disabled={original?.shared}
+						><option value="">Personal</option
+						>{#each calendars.filter((c) => c.access !== 'read') as calendar}<option
 								value={calendar.id}>{calendar.name}</option
 							>{/each}</select
 					></label
@@ -395,17 +423,38 @@
 									.replace('monthly', 'months')
 									.replace('yearly', 'years')}</span
 							></label
-						><label
-							>Occurrences<input
-								type="number"
-								min="1"
-								max="366"
-								required
-								bind:value={count}
-							/></label
 						>
-					</div>{/if}
-				<ReminderPicker bind:values={reminders} disabled={busy} />
+						<label
+							>Ends<select bind:value={repeatEnd}
+								><option value="count">After a number of occurrences</option><option value="date"
+									>On a date</option
+								></select
+							></label
+						>
+						{#if repeatEnd === 'date'}<label
+								>Until (inclusive)<input type="date" required bind:value={until} /></label
+							>{:else}<label
+								>Occurrences<input
+									type="number"
+									min="1"
+									max="366"
+									required
+									bind:value={count}
+								/></label
+							>
+						{/if}
+					</div>
+					{#if frequency === 'WEEKLY' || frequency === 'DAILY'}<fieldset>
+							<legend>Repeat on (leave empty to follow the start date)</legend>
+							<div class="actions">
+								{#each [{ id: 'MO', label: 'Mon' }, { id: 'TU', label: 'Tue' }, { id: 'WE', label: 'Wed' }, { id: 'TH', label: 'Thu' }, { id: 'FR', label: 'Fri' }, { id: 'SA', label: 'Sat' }, { id: 'SU', label: 'Sun' }] as day}<label
+										class="check"
+										><input type="checkbox" value={day.id} bind:group={byDay} />{day.label}</label
+									>{/each}
+							</div>
+						</fieldset>{/if}
+				{/if}
+				{#if !original?.shared}<ReminderPicker bind:values={reminders} disabled={busy} />{/if}
 				<label>Event color<input type="color" bind:value={color} /></label>
 			{:else}<p class="subtle">
 					Guests, reminders, calendar and repeat settings apply to the series. Choose All events to
@@ -413,7 +462,7 @@
 				</p>{/if}
 
 			<div class="actions">
-				<button class="primary" disabled={busy || !fromAddressId}
+				<button class="primary" disabled={busy || (!original?.shared && !fromAddressId)}
 					>{busy ? 'Saving…' : guests.trim() ? 'Save & send invitations' : 'Save event'}</button
 				>{#if original}<button type="button" class="danger" disabled={busy} onclick={cancel}
 						>{original.guests.length ? 'Cancel event' : 'Delete event'}</button

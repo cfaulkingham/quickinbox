@@ -3,7 +3,7 @@ import { expandEvent } from '$lib/organizer/recurrence';
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { organizerSession } from '$lib/server/organizer-http';
-import { getCalendarEvent } from '$lib/server/calendar';
+import { visibleCalendarEvent } from '$lib/server/calendar-access';
 import { getEmailForUser } from '$lib/server/mail-store';
 import { parseEmailIdentities } from '$lib/server/email-address';
 export const load: PageServerLoad = async (event) => {
@@ -12,7 +12,7 @@ export const load: PageServerLoad = async (event) => {
 	const message = emailId ? await getEmailForUser(env.DB, user.id, emailId) : null;
 	if (emailId && !message) throw error(404, 'Message not found');
 	const eventId = event.url.searchParams.get('event');
-	const selected = eventId ? await getCalendarEvent(env.DB, user.id, eventId) : null;
+	const selected = eventId ? await visibleCalendarEvent(env.DB, user.id, eventId) : null;
 	if (eventId && !selected) throw error(404, 'Event not found');
 	const own = new Set(event.locals.addresses.map((a) => a.address.toLowerCase()));
 	const people = message

@@ -1,3 +1,4 @@
+import { vacationRecipient } from './vacation';
 import { recordOperationalFailure } from './operational-events';
 import type { D1Database, R2Bucket } from '@cloudflare/workers-types';
 import type { DeliveryStatus } from '$lib/types';
@@ -184,7 +185,15 @@ async function handleInboundEmail(
 		references: received.headers?.['references'] ?? null,
 		domainId: route.domainId,
 		addressId: route.addressId,
-		providerId
+		providerId,
+		vacationRecipient: vacationRecipient(
+			received.headers,
+			from,
+			!route.viaCatchall &&
+				[...(received.to ?? []), ...(received.cc ?? [])].some(
+					(a) => parseEmailIdentity(a).address === route.address
+				)
+		)
 	});
 
 	const storedAttachments = await storeInboundAttachments(env, client, providerId, emailId);
@@ -224,7 +233,11 @@ export async function storeInboundAttachments(
 		attachments = await client.listReceivedAttachments(providerId);
 	} catch (error) {
 		console.error('Failed to list inbound attachments', providerId, error);
-		await recordOperationalFailure(env.DB, 'inbound', 'Resend could not list attachments for an incoming message.');
+		await recordOperationalFailure(
+			env.DB,
+			'inbound',
+			'Resend could not list attachments for an incoming message.'
+		);
 		return [];
 	}
 
@@ -260,7 +273,11 @@ export async function storeInboundAttachments(
 		} catch (error) {
 			// One bad attachment shouldn't cost us the message.
 			console.error('Failed to store inbound attachment', attachment.id, error);
-			await recordOperationalFailure(env.DB, 'inbound', 'An incoming attachment could not be stored. The message was kept.');
+			await recordOperationalFailure(
+				env.DB,
+				'inbound',
+				'An incoming attachment could not be stored. The message was kept.'
+			);
 		}
 	}
 

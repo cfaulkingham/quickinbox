@@ -1,3 +1,6 @@
+import { refreshSubscriptions } from './lib/server/calendar-subscriptions';
+import { sendTaskReminders } from './lib/server/tasks';
+import { processVacation } from './lib/server/vacation';
 import { deploymentPolicyResponse } from './lib/server/deployment-policy';
 import { getEmailProvider } from './lib/server/context';
 import { wakeSnoozedMail } from './lib/server/mail-cleanup';
@@ -44,10 +47,19 @@ export default {
 				'Calendar invitation handoff failed. It will retry on the next scheduled run.'
 			)
 		);
+		await processVacation(env, provider.kind).catch(() =>
+			recordOperationalFailure(
+				env.DB,
+				'outbound',
+				'Vacation reply processing failed. It will retry on the next scheduled run.'
+			)
+		);
 		await Promise.all([
 			wakeSnoozedMail(env.DB),
 			flushOutbox(env, provider),
-			sendCalendarReminders(env)
+			sendCalendarReminders(env),
+			sendTaskReminders(env),
+			refreshSubscriptions(env.DB)
 		]);
 	},
 

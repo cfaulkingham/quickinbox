@@ -155,6 +155,9 @@
 		<div class="sheet-handle" aria-hidden="true"></div>
 		<nav class="sheet-nav">
 			<a href="/contacts" class="sheet-link"><Icon name="contacts-book-line" size={20} /><span>Contacts</span></a>
+			<a href="/tasks" class="sheet-link"><Icon name="checkbox-circle-line" size={20} /><span>Tasks</span></a>
+			<a href="/tasks?kind=followup" class="sheet-link"><Icon name="time-line" size={20} /><span>Waiting for reply</span></a>
+			<a href="/attachments" class="sheet-link"><Icon name="attachment-2" size={20} /><span>Attachments</span></a>
 			<a href="/calendar" class="sheet-link"><Icon name="calendar-line" size={20} /><span>Calendar</span></a>
 			<a href="/drafts" class="sheet-link" class:active={$page.url.pathname === '/drafts'}>
 				<Icon name="draft-line" size={20} />

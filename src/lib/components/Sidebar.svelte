@@ -53,6 +53,9 @@
 	const tools = $derived<NavItem[]>([
 		{ href: '/contacts', icon: 'contacts-book-line', label: 'Contacts' },
 		{ href: '/calendar', icon: 'calendar-line', label: 'Calendar' },
+		{ href: '/tasks', icon: 'checkbox-circle-line', label: 'Tasks' },
+		{ href: '/tasks?kind=followup', icon: 'time-line', label: 'Waiting for reply' },
+		{ href: '/attachments', icon: 'attachment-2', label: 'Attachments' },
 		{ href: '/settings', icon: 'user-settings-line', label: t('nav.settings') },
 		...(isAdmin ? [{ href: '/admin', icon: 'settings-3-line', label: t('nav.admin') }, { href: '/admin/maintenance', icon: 'pulse-line', label: t('nav.maintenance') }] : [])
 	]);
@@ -62,6 +65,10 @@
 		const [pathname, query = ''] = href.split('?');
 		if ($page.url.pathname !== pathname && !$page.url.pathname.startsWith(`${pathname}/`)) {
 			return false;
+		}
+		if (pathname === '/tasks') {
+			return (new URLSearchParams(query).get('kind') === 'followup') ===
+				($page.url.searchParams.get('kind') === 'followup');
 		}
 
 		// Inbox and Archive share the same route; the view query distinguishes them.

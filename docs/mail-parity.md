@@ -14,7 +14,7 @@ Google Workspace equivalence.
 | Contact portability | Preview UTF-8 vCard or Google Contacts CSV; report invalid entries; batch import with duplicate skipping; vCard and CSV export |
 | Mail integration | Contact and group suggestions in To/Cc/Bcc/forwarding/guests; keyboard selection; save sender, compose, schedule with a contact, create an event from a message |
 | Calendar | Month, timed week, agenda; click hour to create; drag then review/save to reschedule; overlap layout, timed/all-day events, named personal calendars, saved display zone, search in the visible period |
-| Recurrence | Finite daily/weekly/monthly/yearly series; edit/cancel this, following, or all occurrences; local wall-clock times across DST; moved and cancelled exceptions |
+| Recurrence | Finite daily/weekly/monthly/yearly series, daily/weekly weekday choices, COUNT or UNTIL; edit/cancel this, following, or all occurrences; local wall-clock times across DST; moved and cancelled exceptions |
 | Invitations | Stable UID/sequence, full supported series plus exceptions, guest additions/updates/cancellations; Accept/Maybe/Decline in mail or calendar details |
 | Delivery | Atomic event/notices/reminders, immutable invitation payloads, idempotent durable Outbox handoff, delivery status and retry |
 | Reminders | Up to five per event, up to a week before; reminders for every occurrence; ten-minute snooze, dismissal, in-app and optional browser push |
@@ -40,9 +40,10 @@ guests, reminders, invitation mail, or external attachment fetching.
   choices apply to the series. Occurrence edits change title, description,
   location and times. Changing a series schedule requires an explicit reset
   choice if it would discard existing occurrence exceptions.
-- Supported ICS recurrence is finite FREQ/INTERVAL/COUNT with matching EXDATE and
-  RECURRENCE-ID exceptions. BYDAY, UNTIL, RDATE, EXRULE, RANGE and standalone
-  recurrence updates remain unsupported and are reported. ICS files with custom
+- Supported ICS recurrence is finite FREQ/INTERVAL with COUNT or UNTIL, daily/weekly
+  BYDAY and WKST, plus matching EXDATE and RECURRENCE-ID exceptions. Monthly/yearly
+  BYDAY, RDATE, EXRULE, RANGE and standalone recurrence updates remain unsupported
+  and are reported. ICS files with custom
   time zones can be read for single events; recurring custom zones must use an
   IANA zone. External alarms and URLs are never executed or fetched.
 - Calendar queries cover at most 370 days, consider at most 200 series/events,
@@ -70,14 +71,14 @@ guests, reminders, invitation mail, or external attachment fetching.
 
 ## Remaining milestones
 
-1. Broader recurrence interoperability (BYDAY/UNTIL/unbounded series, detached
+1. Broader recurrence interoperability (ordinal BYDAY/unbounded series, detached
    invitation updates), free/busy beyond the visible range, calendar management,
    and per-occurrence guest/reminder choices.
 2. Additional contact fields, richer duplicate matching, group management,
    automatic birthday calendar, and organizer translations in all app languages.
-3. Shared calendars and permissions, proposed new times, delegated organizers,
+3. Proposed new times, more granular delegated-organizer permissions,
    rooms/resources, and appointment booking.
-4. Mail parity audit: scheduled send, filters/rules, search, vacation responses,
+4. Mail parity audit: scheduled send, richer filters/rules, saved searches,
    keyboard shortcuts, and offline behavior as separately tested increments.
 5. Optional Google Contacts/Calendar OAuth, consent, incremental sync, conflict
    handling, revocation and token storage.
@@ -116,3 +117,24 @@ reminders per run. No new binding or scheduled trigger is required.
 - [IETF: iCalendar](https://www.rfc-editor.org/rfc/rfc5545.html)
 - [IETF: iCalendar scheduling interoperability](https://www.rfc-editor.org/info/rfc5546/)
 - [Cloudflare: D1 database and transactional batches](https://developers.cloudflare.com/d1/worker-api/d1-database/)
+
+## Productivity increment (0031)
+
+Tasks, no-reply follow-ups, per-address vacation responses, attachment previews and
+search, BYDAY/UNTIL/WKST recurrence, shared named calendars with view/edit access,
+revocable secret ICS feeds, and external read-only ICS subscriptions are included.
+See the README productivity section for behavior, limits and rollout requirements.
+The minute worker also processes task reminders, vacation replies, and up to three
+due calendar subscriptions per run. Subscription fetches are limited to public HTTPS
+URLs, bounded bodies, validated redirects, and a ten-second timeout per fetch.
+
+Additional tests use real SQLite migrations and mock providers to cover account
+isolation, stale edits, permission revocation during saves, automatic-reply
+throttling/idempotency, live-versus-imported replies, UTC UNTIL across time zones,
+subscription URL rejection, feed rotation, and atomic subscription refresh failure.
+
+Validation: 430 tests pass, including 17 productivity regression tests. Type checking
+reports no errors (four existing warnings), and the production build succeeds. All
+migrations through 0031 apply to a fresh local D1 database. Browser checks cover
+email-to-task and follow-up creation, vacation settings, image/PDF previews, shared
+calendars, weekday/end-date recurrence, and mobile navigation in both themes.

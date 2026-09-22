@@ -108,6 +108,9 @@
 				{ href: '/snoozed', icon: 'Clock', label: t('cleanup.snoozed') },
 				{ href: '/contacts', icon: 'Users', label: 'Contacts' },
 				{ href: '/calendar', icon: 'Calendar', label: 'Calendar' },
+				{ href: '/tasks', icon: 'Check', label: 'Tasks' },
+				{ href: '/tasks?kind=followup', icon: 'Clock', label: 'Waiting for reply' },
+				{ href: '/attachments', icon: 'ImageFile', label: 'Attachments' },
 				{ href: '/search', icon: 'Search', label: t('common.search') }
 			]
 		},
@@ -147,6 +150,10 @@
 
 	function isActive(href: string): boolean {
 		if (href === '/admin') return pathname === '/admin';
+		if (href === '/tasks' || href === '/tasks?kind=followup') {
+			return pathname === '/tasks' &&
+				(href.includes('?kind=followup') === ($page.url.searchParams.get('kind') === 'followup'));
+		}
 		if (href.startsWith('/inbox?label=')) {
 			return $page.url.searchParams.get('label') === new URLSearchParams(href.split('?')[1]).get('label');
 		}
@@ -423,8 +430,8 @@
 		<Tooltip text={t('nav.compose')} side="top">
 			<button type="button" aria-label={t('nav.compose')} onclick={openCompose}><Icon name="PencilCompose" size={16} /></button>
 		</Tooltip>
-		<Tooltip text={t('nav.sent')} side="top">
-			<a href="/sent" aria-label={t('nav.sent')}><Icon name="Plane2" size={18} /></a>
+		<Tooltip text={t('nav.openSidebar')} side="top">
+			<button type="button" aria-label={t('nav.openSidebar')} aria-expanded={mobileOpen} onclick={toggleSidebar}><Icon name="ThreeDots" size={18} /></button>
 		</Tooltip>
 		<Tooltip text={t('nav.settings')} side="top">
 			<a href="/settings/general" aria-label={t('nav.settings')}><Icon name="SettingsGear" size={18} /></a>

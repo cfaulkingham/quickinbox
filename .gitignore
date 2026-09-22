@@ -26,3 +26,6 @@ vite.config.ts.timestamp-*
 
 # Local secrets for wrangler dev
 .dev.vars
+
+# Generated PDF rendering assets
+/static/pdf-assets/

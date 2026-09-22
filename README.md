@@ -56,9 +56,62 @@ You need:
 
 If you already deployed from this repo, pulling updates only changes the product name in the UI and docs. It does **not** rename your Worker, D1 database, or R2 bucket — leave those as they are (often `quickmail` / `quickmail-attachments`). Existing `qm_live_` API keys keep working, and `quickmail` remains a CLI alias.
 
+### Tasks, follow-ups, vacation replies, and calendar subscriptions
+
+Apply `0031_productivity.sql` before serving this version. The normal `bun run deploy`
+command applies migrations. Keep the existing minute Cron Trigger enabled; no new
+Cloudflare bindings are needed. Run `bun install` after updating to install the PDF
+renderer. The dev/build commands copy its rendering assets automatically.
+
+- **Tasks** adds a private task list with due dates, reminders, notes, completion,
+  and a link to the original email. Choose **Create task** in either message reader.
+  Tasks remain available if their source email is permanently removed.
+- **Waiting for reply** tracks follow-ups created from sent messages with **Remind
+  if no reply**. A new live inbound message in that conversation clears the follow-up.
+  Imported mail and messages from your own addresses do not clear it. This follows
+  the app's conversation grouping; it does not infer whether a reply answers your
+  question. Due reminders appear in the app and use browser push when configured.
+  Dismiss them or snooze for ten minutes. Push delivery remains best effort.
+- **Settings → General → Vacation responder** stores a separate date range and
+  message for each address, with a 1–30 day per-sender reply interval. Only new,
+  directly addressed mail received after activation is considered. Catch-all/Bcc-only
+  mail, mailing lists, automated messages, bounce messages, spam, and messages with
+  missing or mismatched return-paths are skipped. Replies enter the durable Outbox
+  after at least one minute and carry automatic-response suppression headers.
+  Outbox delivery and retry semantics also apply to vacation replies. Disabling the
+  responder stops new replies; previously prepared replies can still reach Outbox
+  and send.
+- **Attachments** searches filenames, senders, and subjects across your mail,
+  excluding Drafts, Spam, and Trash. Both readers and the attachment browser preview
+  images and PDFs without leaving the app. PDFs use a locally bundled renderer with
+  page controls; encrypted or damaged files offer a download fallback.
+- **Recurrence** supports daily/weekly weekday selections and an inclusive end date
+  (`BYDAY`, `UNTIL`, and `WKST` in ICS), while retaining a limit of 366 occurrences.
+  The starting date must match a selected weekday. Timed ICS exports use UTC UNTIL
+  values while occurrences retain the event's local time across DST.
+- **Calendar settings → Sharing & subscription link** shares a named calendar with
+  existing accounts on this server. Viewers can read events; editors can create and
+  change events and queue guest invitations using the event organizer's identity.
+  Shared views omit private source-email links and the owner's reminder settings.
+  Owners can also create, replace, or revoke a secret read-only ICS subscription URL.
+  Anyone holding that URL can read event details and guests. Revocation stops future
+  fetches; it cannot remove copies already downloaded by another app.
+- **Calendar settings → Subscribe to a calendar** accepts HTTPS/webcal ICS URLs.
+  Subscribed calendars are read-only, refresh hourly, and never send invitations.
+  Failed or unsupported feeds retain the last successful snapshot and display the
+  error. Removing a subscription removes its local events. Limits: 2 MB per feed,
+  500 events/series, 366 occurrences per series, and 4 MB expanded stored data.
+  Unbounded recurrence, monthly/yearly BYDAY, BYSETPOS, and detached recurrence updates
+  remain unsupported and are reported, rather than partially imported.
+
+New organizer endpoints require a signed-in browser session. Existing mail API keys
+and hosted MCP clients do not automatically gain task, vacation, or calendar-sharing
+permissions. Secret calendar URLs are the explicit exception for read-only access.
+The admin mail archive is still mail-focused; back up D1 and R2 for all organizer data.
+
 ### Contacts and calendar
 
-Apply migrations through `0030_organizer_parity.sql` before deploying this version (`bun run deploy`
+Apply all available migrations before deploying this version (`bun run deploy`
 applies migrations automatically). Contacts and events use the existing D1
 database; calendar email attachments use R2 and the existing durable Outbox.
 Keep the existing once-per-minute scheduled trigger enabled for invitation
@@ -103,8 +156,9 @@ Guests and reminder settings apply to the whole series.
 
 Calendar file import creates personal copies with no guests or reminders and
 sends no mail. It skips existing event UIDs and reports unsupported items. Supported
-recurring ICS uses the same finite COUNT rules; BYDAY, UNTIL, RDATE, unbounded rules,
-and standalone recurrence updates are reported instead of partially imported.
+recurring ICS supports finite COUNT or UNTIL rules and daily/weekly BYDAY and WKST.
+Monthly/yearly BYDAY, RDATE, unbounded rules, and standalone recurrence updates are
+reported instead of partially imported.
 Files are limited to 2 MB; contact imports support 2,000 contacts and calendar
 imports support 500 events/series. See the [parity roadmap](docs/mail-parity.md)
 for detailed limits and remaining collaboration, localization, and Google sync work.

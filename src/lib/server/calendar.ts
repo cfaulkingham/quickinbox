@@ -1,3 +1,4 @@
+import { calendarVisibility, calendarAccess, sharedEditor, visibleEvent } from './calendar-access';
 import type { D1Database, D1PreparedStatement, R2Bucket } from '@cloudflare/workers-types';
 import { error } from '@sveltejs/kit';
 import { z } from 'zod';
@@ -61,7 +62,14 @@ export const eventInput = z.object({
 		.object({
 			frequency: z.enum(['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY']),
 			interval: z.number().int().min(1).max(30),
-			count: z.number().int().min(1).max(366)
+			count: z.number().int().min(1).max(366).optional(),
+			until: z.string().max(30).optional(),
+			byDay: z
+				.array(z.enum(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']))
+				.min(1)
+				.max(7)
+				.optional(),
+			weekStart: z.enum(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']).optional()
 		})
 		.nullable()
 		.optional(),
@@ -106,31 +114,48 @@ export async function listCalendarEvents(
 		throw error(400, 'Choose a calendar range of at most one year.');
 	const rows = await db
 		.prepare(
-			`WITH candidates AS (SELECT id, starts_at, data_json FROM calendar_events WHERE user_id = ? AND cancelled = 0
+			`WITH candidates AS (SELECT e.id, e.user_id, e.starts_at, e.data_json FROM calendar_events e WHERE ${calendarVisibility} AND e.cancelled = 0
     AND starts_at < ? AND range_end > ?
     AND (? = '' OR COALESCE(json_extract(data_json, '$.calendarId'), '') = ?)
     ORDER BY starts_at, id LIMIT 201)
     SELECT CASE WHEN SUM(length(CAST(data_json AS BLOB))) OVER (ORDER BY starts_at, id) <= 4194304
-      THEN data_json ELSE NULL END AS data_json FROM candidates ORDER BY starts_at, id`
+      THEN data_json ELSE NULL END AS data_json, user_id FROM candidates ORDER BY starts_at, id`
 		)
 		.bind(
+			userId,
+			userId,
 			userId,
 			new Date(b).toISOString(),
 			new Date(a).toISOString(),
 			calendarId,
 			calendarId === 'default' ? '' : calendarId
 		)
-		.all<{ data_json: string | null }>();
+		.all<{ data_json: string | null; user_id: string }>();
 	const events: CalendarEvent[] = [];
 	let responseBytes = 0;
 	let sizeLimited = false;
 	const search = query.trim().slice(0, 200).toLowerCase();
+	const permissions = rows.results.some((row) => row.user_id !== userId)
+		? await db
+				.prepare(
+					`SELECT c.id,CASE WHEN c.user_id=? THEN 'write' ELSE s.permission END AS access FROM personal_calendars c LEFT JOIN calendar_shares s ON s.calendar_id=c.id AND s.user_id=? WHERE c.user_id=? OR s.user_id IS NOT NULL`
+				)
+				.bind(userId, userId, userId)
+				.all<{ id: string; access: string }>()
+		: { results: [] };
+	const accessByCalendar = new Map(permissions.results.map((c) => [c.id, c.access]));
 	rowsLoop: for (const row of rows.results.slice(0, 200)) {
 		if (row.data_json === null) {
 			sizeLimited = true;
 			break;
 		}
-		for (const occurrence of expandEvent(JSON.parse(row.data_json))) {
+		const rawEvent: CalendarEvent = JSON.parse(row.data_json);
+		const shared = row.user_id !== userId;
+		const access = rawEvent.calendarId ? accessByCalendar.get(rawEvent.calendarId) : null;
+		if (shared && !access) continue;
+		for (const occurrence of expandEvent(
+			visibleEvent(rawEvent, shared, access === 'read' ? 'read' : 'write')
+		)) {
 			if (
 				Date.parse(occurrence.startsAt) < b &&
 				Date.parse(occurrence.endsAt) > a &&
@@ -233,7 +258,8 @@ export async function persistCalendarEvent(
 	userId: string,
 	event: CalendarEvent,
 	previous: CalendarEvent | null,
-	notices: NoticePayload[] = []
+	notices: NoticePayload[] = [],
+	actorId = userId
 ): Promise<CalendarEvent> {
 	const mutation = crypto.randomUUID();
 	const occurrences = expandEvent(event, true);
@@ -251,7 +277,9 @@ export async function persistCalendarEvent(
 					.prepare(
 						`UPDATE calendar_events SET title = ?, starts_at = ?, ends_at = ?,
     range_end = ?, organizer_email = ?, data_json = ?, version = ?, sequence = ?, cancelled = ?, mutation_id = ?, updated_at = ?
-    WHERE id = ? AND user_id = ? AND version = ?`
+    WHERE id = ? AND user_id = ? AND version = ? AND (? = user_id OR EXISTS (
+      SELECT 1 FROM personal_calendars c LEFT JOIN calendar_shares s ON s.calendar_id=c.id AND s.user_id=?
+      WHERE c.id=json_extract(calendar_events.data_json,'$.calendarId') AND (c.user_id=? OR s.permission='write')))`
 					)
 					.bind(
 						event.title,
@@ -267,12 +295,16 @@ export async function persistCalendarEvent(
 						event.updatedAt,
 						event.id,
 						userId,
-						previous.version
+						previous.version,
+						actorId,
+						actorId,
+						actorId
 					)
 			: db
 					.prepare(
 						`INSERT INTO calendar_events (id, user_id, uid, title, starts_at, ends_at, range_end, organizer_email, data_json, version, sequence,
-      cancelled, mutation_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      cancelled, mutation_id, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+      WHERE ? IS NULL OR EXISTS(SELECT 1 FROM personal_calendars c LEFT JOIN calendar_shares s ON s.calendar_id=c.id AND s.user_id=? WHERE c.id=? AND (c.user_id=? OR s.permission='write') AND NOT EXISTS(SELECT 1 FROM calendar_subscriptions WHERE calendar_id=c.id))`
 					)
 					.bind(
 						event.id,
@@ -289,7 +321,11 @@ export async function persistCalendarEvent(
 						+event.cancelled,
 						mutation,
 						event.updatedAt,
-						event.updatedAt
+						event.updatedAt,
+						event.calendarId ?? null,
+						actorId,
+						event.calendarId ?? null,
+						actorId
 					)
 	];
 	for (const notice of notices)
@@ -373,26 +409,47 @@ export async function persistCalendarEvent(
 	return event;
 }
 
-export async function saveCalendarEvent(db: D1Database, user: User, raw: unknown, id?: string) {
+export async function saveCalendarEvent(
+	db: D1Database,
+	user: User,
+	raw: unknown,
+	id?: string,
+	actorId = user.id
+): Promise<CalendarEvent> {
 	const parsed = eventInput.safeParse(raw);
 	if (!parsed.success)
 		throw error(400, 'Check the event title, dates, guests, and reminder. Maximum 30 guests.');
 	const input = parsed.data;
 	const previous = id ? await getCalendarEvent(db, user.id, id) : null;
-	if (id && !previous) throw error(404, 'Event not found');
+	if (id && !previous) {
+		const access = await sharedEditor(db, user.id, id);
+		if (input.calendarId !== access.event.calendarId)
+			throw error(403, 'Shared events must stay in their calendar.');
+		const saved = await saveCalendarEvent(
+			db,
+			access.owner,
+			{
+				...input,
+				sourceEmailId: access.event.sourceEmailId,
+				fromAddressId: access.event.fromAddressId,
+				reminders: access.event.reminders,
+				reminderMinutes: access.event.reminderMinutes
+			},
+			id,
+			user.id
+		);
+		return visibleEvent(saved, true, 'write');
+	}
 	if (previous && (!previous.owned || previous.cancelled))
 		throw error(403, 'Only the organizer can edit an active event.');
 	if (previous && input.version !== previous.version)
 		throw error(409, 'This event changed. Reload before saving.');
-	if (
-		input.calendarId &&
-		!(await db
-			.prepare('SELECT id FROM personal_calendars WHERE id = ? AND user_id = ?')
-			.bind(input.calendarId, user.id)
-			.first())
-	)
-		throw error(404, 'Calendar not found');
-	if (previous && input.scope !== 'all') return saveOccurrence(db, user, previous, input);
+	if (input.calendarId) {
+		const access = await calendarAccess(db, actorId, input.calendarId);
+		if (!access) throw error(404, 'Calendar not found');
+		if (access.access === 'read') throw error(403, 'Choose a calendar you can edit.');
+	}
+	if (previous && input.scope !== 'all') return saveOccurrence(db, user, previous, input, actorId);
 	let dates;
 	try {
 		dates = eventTimes(input.startLocal, input.endLocal, input.timeZone, input.allDay);
@@ -481,7 +538,7 @@ export async function saveCalendarEvent(db: D1Database, user: User, raw: unknown
 				'CANCEL'
 			)
 		);
-	return persistCalendarEvent(db, user.id, event, previous, notices);
+	return persistCalendarEvent(db, user.id, event, previous, notices, actorId);
 }
 
 export async function cancelCalendarEvent(
@@ -490,15 +547,23 @@ export async function cancelCalendarEvent(
 	id: string,
 	version: number,
 	scope: 'this' | 'future' | 'all' = 'all',
-	occurrenceKey?: string
-) {
+	occurrenceKey?: string,
+	actorId = user.id
+): Promise<CalendarEvent> {
 	const previous = await getCalendarEvent(db, user.id, id);
-	if (!previous) throw error(404, 'Event not found');
+	if (!previous) {
+		const access = await sharedEditor(db, user.id, id);
+		return visibleEvent(
+			await cancelCalendarEvent(db, access.owner, id, version, scope, occurrenceKey, user.id),
+			true,
+			'write'
+		);
+	}
 	if (!previous.owned) throw error(403, 'Respond to the invitation to decline this event.');
 	if (version !== previous.version)
 		throw error(409, 'This event changed. Reload before cancelling.');
 	if (previous.cancelled) return previous;
-	if (scope !== 'all') return cancelOccurrence(db, user, previous, scope, occurrenceKey);
+	if (scope !== 'all') return cancelOccurrence(db, user, previous, scope, occurrenceKey, actorId);
 
 	const from = await resolveFromAddress(db, user, previous.fromAddressId);
 	if (from.address.toLowerCase() !== previous.organizer.email)
@@ -515,7 +580,8 @@ export async function cancelCalendarEvent(
 		user.id,
 		event,
 		previous,
-		event.guests.map((guest) => calendarNotice(user, from, event, guest.email, 'CANCEL'))
+		event.guests.map((guest) => calendarNotice(user, from, event, guest.email, 'CANCEL')),
+		actorId
 	);
 }
 
@@ -613,7 +679,8 @@ async function persistSeriesChange(
 	db: D1Database,
 	user: User,
 	previous: CalendarEvent,
-	event: CalendarEvent
+	event: CalendarEvent,
+	actorId = user.id
 ) {
 	if (JSON.stringify(event).length > 512 * 1024)
 		throw error(400, 'This series has too many detailed exceptions. Edit fewer occurrences.');
@@ -625,14 +692,16 @@ async function persistSeriesChange(
 		user.id,
 		event,
 		previous,
-		event.guests.map((guest) => calendarNotice(user, from, event, guest.email, 'REQUEST'))
+		event.guests.map((guest) => calendarNotice(user, from, event, guest.email, 'REQUEST')),
+		actorId
 	);
 }
 async function saveOccurrence(
 	db: D1Database,
 	user: User,
 	previous: CalendarEvent,
-	input: z.infer<typeof eventInput>
+	input: z.infer<typeof eventInput>,
+	actorId = user.id
 ) {
 	if (
 		input.timeZone !== previous.timeZone ||
@@ -686,20 +755,27 @@ async function saveOccurrence(
 	} catch (cause) {
 		throw error(400, (cause as Error).message);
 	}
-	return persistSeriesChange(db, user, previous, {
-		...previous,
-		exceptions,
-		version: previous.version + 1,
-		sequence: previous.sequence + 1,
-		updatedAt: new Date().toISOString()
-	});
+	return persistSeriesChange(
+		db,
+		user,
+		previous,
+		{
+			...previous,
+			exceptions,
+			version: previous.version + 1,
+			sequence: previous.sequence + 1,
+			updatedAt: new Date().toISOString()
+		},
+		actorId
+	);
 }
 async function cancelOccurrence(
 	db: D1Database,
 	user: User,
 	previous: CalendarEvent,
 	scope: 'this' | 'future',
-	key?: string
+	key?: string,
+	actorId = user.id
 ) {
 	const exceptions = { ...previous.exceptions };
 	for (const o of selectOccurrences(previous, key, scope))
@@ -711,13 +787,19 @@ async function cancelOccurrence(
 			endLocal: o.endLocal,
 			cancelled: true
 		};
-	return persistSeriesChange(db, user, previous, {
-		...previous,
-		exceptions,
-		version: previous.version + 1,
-		sequence: previous.sequence + 1,
-		updatedAt: new Date().toISOString()
-	});
+	return persistSeriesChange(
+		db,
+		user,
+		previous,
+		{
+			...previous,
+			exceptions,
+			version: previous.version + 1,
+			sequence: previous.sequence + 1,
+			updatedAt: new Date().toISOString()
+		},
+		actorId
+	);
 }
 
 export async function respondFromCalendar(db: D1Database, user: User, id: string, raw: unknown) {
@@ -730,7 +812,7 @@ export async function respondFromCalendar(db: D1Database, user: User, id: string
 	if (!parsed.success) throw error(400, 'Choose a response and reload the event.');
 	const previous = await getCalendarEvent(db, user.id, id);
 	if (!previous) throw error(404, 'Event not found');
-	if (previous.owned || previous.cancelled || !previous.organizer.email)
+	if (previous.owned || previous.cancelled || previous.subscription || !previous.organizer.email)
 		throw error(400, 'This event is not an active invitation.');
 	if (previous.version !== parsed.data.version)
 		throw error(409, 'This event changed. Reload before responding.');
