@@ -81,7 +81,7 @@ test('setup requires the password and confirmed code, keeps the secret encrypted
  expect(await getMfa(f.db, 'u')).toBeNull();
  expect(JSON.stringify(f.sql.query('SELECT * FROM mfa_enrollments').all())).not.toContain(setup.secret);
  await expect(enableMfa(f.db, f.actor, setup.enrollmentId, 'invalid', KEY)).rejects.toThrow();
- const api = await createApiToken(f.db, 'u', { scopes: ['mail:read'] });
+ const api = await createApiToken(f.db, 'u', f.actor.sessionId, { scopes: ['mail:read'] });
  const codes = await enableMfa(f.db, f.actor, setup.enrollmentId, await totpCode(setup.secret, Math.floor(Date.now() / 30000)), KEY);
  expect(codes).toHaveLength(10); expect(new Set(codes).size).toBe(10);
  expect(await getAuthenticatedSession(f.db, f.token)).toBeNull();
@@ -176,8 +176,10 @@ test('enabling 2FA wins over an in-flight password-only session issuance', async
 test('legacy sessions, API keys and OAuth grants cannot bypass 2FA even if issued late', async () => {
  const f = await enabled();
  expect(() => f.sql.exec("INSERT INTO sessions(id,user_id,token_hash,expires_at) VALUES('late','u','late','2099-01-01')")).toThrow();
- const api = await createApiToken(f.db, 'u', { scopes: ['mail:read'] });
- expect(await getUserByApiToken(f.db, api.token)).toBeNull();
+ await expect(createApiToken(f.db, 'u', f.actor.sessionId, { scopes: ['mail:read'] })).rejects.toThrow();
+ const legacyKey = 'qi_live_' + 'x'.repeat(48);
+ f.sql.query("INSERT INTO api_tokens(id,user_id,name,token_hash,token_preview,scopes,created_at) VALUES('late-api','u','Legacy',?,'test','mail:read','2026-01-01')").run(await hashToken(legacyKey));
+ expect(await getUserByApiToken(f.db, legacyKey)).toBeNull();
  const token = 'qi_mcp_' + 'x'.repeat(48);
  f.sql.query(`INSERT INTO oauth_grants(id,family_id,client_id,user_id,scope,resource,access_hash,refresh_hash,access_expires_at,refresh_expires_at,created_at)
   VALUES('g','f','c','u','mail:read','https://example.com',?,'r','2099-01-01','2099-01-01','2026-01-01')`).run(await hashToken(token));

@@ -1,5 +1,6 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import { hashToken } from './crypto';
+import { CredentialAuthorizationError, LIVE_CREDENTIAL_SESSION } from './credential-authorization';
 import type { ApiScope } from './api-tokens';
 import type { ConnectedApp, User } from '$lib/types';
 
@@ -517,14 +518,15 @@ export type AuthorizationCode = {
 
 export async function issueAuthorizationCode(
 	db: D1Database,
-	input: AuthorizationCode
+	input: AuthorizationCode,
+	sessionId: string
 ): Promise<string> {
 	const code = randomToken('qi_code_');
 	const now = Date.now();
-	await db
+	const inserted = await db
 		.prepare(
 			`INSERT INTO oauth_codes (code_hash, client_id, user_id, redirect_uri, code_challenge, scope, resource, expires_at, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			 SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (${LIVE_CREDENTIAL_SESSION})`
 		)
 		.bind(
 			await hashToken(code),
@@ -535,9 +537,12 @@ export async function issueAuthorizationCode(
 			input.scope.join(' '),
 			input.resource,
 			new Date(now + AUTH_CODE_TTL_MS).toISOString(),
-			new Date(now).toISOString()
+			new Date(now).toISOString(),
+			sessionId,
+			input.user_id
 		)
 		.run();
+	if ((inserted.meta.changes ?? 0) === 0) throw new CredentialAuthorizationError();
 	return code;
 }
 
@@ -553,25 +558,26 @@ type CodeRow = {
 };
 
 /**
- * Delete-and-return makes the code single-use even under concurrent exchange:
- * only the request whose DELETE removed the row gets it back.
+ * Read for protocol/PKCE validation. issueGrant consumes the still-valid code
+ * atomically with insertion, so reset can invalidate an in-flight exchange.
  */
-export async function consumeAuthorizationCode(
+export async function readAuthorizationCode(
 	db: D1Database,
 	code: string
-): Promise<AuthorizationCode | null> {
+): Promise<(AuthorizationCode & { code_hash: string }) | null> {
 	if (!code || code.length > MAX_TOKEN_LENGTH) return null;
 	const hash = await hashToken(code);
 	const row = await db
 		.prepare(
-			`DELETE FROM oauth_codes WHERE code_hash = ?
-			 RETURNING code_hash, client_id, user_id, redirect_uri, code_challenge, scope, resource, expires_at`
+			`SELECT code_hash, client_id, user_id, redirect_uri, code_challenge, scope, resource, expires_at
+			 FROM oauth_codes WHERE code_hash = ?`
 		)
 		.bind(hash)
 		.first<CodeRow>();
 	if (!row) return null;
 	if (Date.parse(row.expires_at) <= Date.now()) return null;
 	return {
+		code_hash: row.code_hash,
 		client_id: row.client_id,
 		user_id: row.user_id,
 		redirect_uri: row.redirect_uri,
@@ -596,48 +602,52 @@ export type TokenResponse = {
 	scope: string;
 };
 
-async function insertGrant(
-	db: D1Database,
-	input: { clientId: string; userId: string; scope: OAuthScope[]; resource: string; familyId: string }
-): Promise<TokenResponse> {
+/** Finish async token generation before entering a credential transaction. */
+async function prepareGrant(scope: OAuthScope[]) {
 	const accessToken = randomToken(ACCESS_TOKEN_PREFIX);
 	const refreshToken = randomToken(REFRESH_TOKEN_PREFIX);
 	const now = Date.now();
-	await db
-		.prepare(
-			`INSERT INTO oauth_grants
-			 (id, family_id, client_id, user_id, scope, resource, access_hash, refresh_hash, access_expires_at, refresh_expires_at, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-		)
-		.bind(
-			crypto.randomUUID(),
-			input.familyId,
-			input.clientId,
-			input.userId,
-			input.scope.join(' '),
-			input.resource,
-			await hashToken(accessToken),
-			await hashToken(refreshToken),
-			new Date(now + ACCESS_TOKEN_TTL_MS).toISOString(),
-			new Date(now + REFRESH_TOKEN_TTL_MS).toISOString(),
-			new Date(now).toISOString()
-		)
-		.run();
 	return {
-		access_token: accessToken,
-		token_type: 'Bearer',
-		expires_in: Math.floor(ACCESS_TOKEN_TTL_MS / 1000),
-		refresh_token: refreshToken,
-		scope: input.scope.join(' ')
+		id: crypto.randomUUID(),
+		accessHash: await hashToken(accessToken),
+		refreshHash: await hashToken(refreshToken),
+		accessExpiresAt: new Date(now + ACCESS_TOKEN_TTL_MS).toISOString(),
+		refreshExpiresAt: new Date(now + REFRESH_TOKEN_TTL_MS).toISOString(),
+		createdAt: new Date(now).toISOString(),
+		response: {
+			access_token: accessToken,
+			token_type: 'Bearer' as const,
+			expires_in: Math.floor(ACCESS_TOKEN_TTL_MS / 1000),
+			refresh_token: refreshToken,
+			scope: scope.join(' ')
+		}
 	};
 }
 
 /** First tokens for an approved authorization code. */
 export async function issueGrant(
 	db: D1Database,
-	input: { clientId: string; userId: string; scope: OAuthScope[]; resource: string }
+	code: AuthorizationCode & { code_hash: string }
 ): Promise<TokenResponse> {
-	return insertGrant(db, { ...input, familyId: crypto.randomUUID() });
+	const grant = await prepareGrant(code.scope);
+	const [inserted] = await db.batch([
+		db.prepare(`INSERT INTO oauth_grants
+			(id, family_id, client_id, user_id, scope, resource, access_hash, refresh_hash, access_expires_at, refresh_expires_at, created_at)
+			SELECT ?, ?, c.client_id, c.user_id, c.scope, c.resource, ?, ?, ?, ?, ?
+			FROM oauth_codes c JOIN users u ON u.id = c.user_id
+			WHERE c.code_hash = ? AND datetime(c.expires_at) > datetime('now')
+			  AND u.must_change_password = 0
+			  AND NOT EXISTS (SELECT 1 FROM user_mfa WHERE user_id = u.id)`)
+			.bind(grant.id, crypto.randomUUID(), grant.accessHash, grant.refreshHash,
+				grant.accessExpiresAt, grant.refreshExpiresAt, grant.createdAt, code.code_hash),
+		db.prepare(`DELETE FROM oauth_codes WHERE code_hash = ?
+			AND EXISTS (SELECT 1 FROM oauth_grants WHERE id = ?)`)
+			.bind(code.code_hash, grant.id)
+	]);
+	if ((inserted.meta.changes ?? 0) === 0) {
+		throw new OAuthError('invalid_grant', 'Authorization code is invalid or expired');
+	}
+	return grant.response;
 }
 
 type GrantRow = {
@@ -692,24 +702,28 @@ export async function refreshGrant(
 		scope = requested;
 	}
 
-	// Revoke-then-insert: the old token stops working the instant the new one
-	// exists, and a lost response leaves the client with nothing usable, which
-	// is the safe failure.
-	const revoked = await db
-		.prepare('UPDATE oauth_grants SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL')
-		.bind(new Date().toISOString(), row.id)
-		.run();
-	if ((revoked.meta.changes ?? 0) === 0) {
+	// Rotation is one transaction. Revocation before it removes the live parent;
+	// revocation after it sees the successor, including under concurrent replay.
+	const grant = await prepareGrant(scope);
+	const [inserted] = await db.batch([
+		db.prepare(`INSERT INTO oauth_grants
+			(id, family_id, client_id, user_id, scope, resource, access_hash, refresh_hash, access_expires_at, refresh_expires_at, created_at)
+			SELECT ?, p.family_id, p.client_id, p.user_id, ?, p.resource, ?, ?, ?, ?, ?
+			FROM oauth_grants p JOIN users u ON u.id = p.user_id
+			WHERE p.id = ? AND p.revoked_at IS NULL
+			  AND datetime(p.refresh_expires_at) > datetime('now') AND u.must_change_password = 0
+			  AND NOT EXISTS (SELECT 1 FROM user_mfa WHERE user_id = u.id)`)
+			.bind(grant.id, scope.join(' '), grant.accessHash, grant.refreshHash,
+				grant.accessExpiresAt, grant.refreshExpiresAt, grant.createdAt, row.id),
+		db.prepare(`UPDATE oauth_grants SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL
+			AND EXISTS (SELECT 1 FROM oauth_grants WHERE id = ?)`)
+			.bind(grant.createdAt, row.id, grant.id)
+	]);
+	if ((inserted.meta.changes ?? 0) === 0) {
 		await revokeFamily(db, row.family_id);
 		throw new OAuthError('invalid_grant', 'Refresh token was already used; all tokens for this login were revoked');
 	}
-	return insertGrant(db, {
-		clientId: row.client_id,
-		userId: row.user_id,
-		scope,
-		resource: row.resource,
-		familyId: row.family_id
-	});
+	return grant.response;
 }
 
 async function revokeFamily(db: D1Database, familyId: string): Promise<void> {
@@ -849,10 +863,11 @@ function clientNameFromId(clientId: string): string {
 
 /** Disconnect an app: every live token this user issued to the client. */
 export async function revokeClientForUser(db: D1Database, userId: string, clientId: string): Promise<number> {
-	const result = await db
-		.prepare('UPDATE oauth_grants SET revoked_at = ? WHERE user_id = ? AND client_id = ? AND revoked_at IS NULL')
-		.bind(new Date().toISOString(), userId, clientId)
-		.run();
+	const [result] = await db.batch([
+		db.prepare('UPDATE oauth_grants SET revoked_at = ? WHERE user_id = ? AND client_id = ? AND revoked_at IS NULL')
+			.bind(new Date().toISOString(), userId, clientId),
+		db.prepare('DELETE FROM oauth_codes WHERE user_id = ? AND client_id = ?').bind(userId, clientId)
+	]);
 	return result.meta.changes ?? 0;
 }
 

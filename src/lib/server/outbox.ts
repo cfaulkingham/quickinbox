@@ -92,8 +92,8 @@ export async function resolveFromAddress(
 
 /**
  * Replies come from the mailbox that received the original, not the default
- * sending identity. Catch-all mail uses that exact recipient if the user owns
- * the domain, even when the local-part is not a saved address.
+ * sending identity. Only the configured catch-all owner may reuse an unassigned
+ * recipient, and imported headers never establish that authority.
  *
  * Returns null when the user has no sending identity, so the thread page can
  * still load.
@@ -113,7 +113,7 @@ export function persistableAddressId(id: string | null | undefined): string | nu
 export async function resolveReplyFromAddress(
 	db: D1Database,
 	user: User,
-	original: { direction: 'inbound' | 'outbound'; to_addr: string; from_addr: string }
+	original: { id?: string; direction: 'inbound' | 'outbound'; to_addr: string; from_addr: string }
 ): Promise<MailAddress | null> {
 	const mailbox = parseEmailAddress(
 		original.direction === 'inbound' ? original.to_addr : original.from_addr
@@ -125,12 +125,21 @@ export async function resolveReplyFromAddress(
 
 	const domainName = mailbox.split('@')[1];
 	const domain = domainName ? await getDomainByName(db, domainName) : null;
-	const canSendOnDomain =
-		domain &&
-		(domain.catchall_user_id === user.id ||
-			owned.some((address) => address.domain_id === domain.id));
+	// Native mail records the routed recipient or authenticated sending identity;
+	// imports and drafts cannot establish authority. Check the stored row so a
+	// retained Sent message keeps its identity after the received mail is deleted.
+	const delivery = domain?.catchall_user_id === user.id && original.id
+		? await db.prepare(`SELECT original.id FROM emails original
+			WHERE original.id = ? AND original.user_id = ? AND original.import_hash IS NULL
+			  AND original.domain_id = ?
+			  AND NOT EXISTS (SELECT 1 FROM addresses WHERE address = ? COLLATE NOCASE)
+			  AND ((original.direction = 'inbound' AND original.to_addr = ? COLLATE NOCASE)
+				OR (original.direction = 'outbound' AND original.from_addr = ? COLLATE NOCASE
+				  AND (original.status IS NULL OR original.status <> 'draft')))`)
+			.bind(original.id, user.id, domain.id, mailbox, mailbox, mailbox).first()
+		: null;
 
-	if (domain && canSendOnDomain && mailbox.includes('@')) {
+	if (domain && delivery && mailbox.includes('@')) {
 		return {
 			id: `reply:${mailbox}`,
 			user_id: user.id,

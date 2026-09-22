@@ -1,5 +1,6 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { createApiToken, listApiTokens, parseScopes, type ApiScope } from '$lib/server/api-tokens';
+import { CredentialAuthorizationError } from '$lib/server/credential-authorization';
 
 export const GET: RequestHandler = async ({ locals, platform }) => {
 	const db = platform?.env.DB;
@@ -16,7 +17,7 @@ type CreateTokenBody = {
 
 export const POST: RequestHandler = async ({ request, locals, platform }) => {
 	const db = platform?.env.DB;
-	if (!db || !locals.user) {
+	if (!db || !locals.user || locals.authMethod !== 'session' || !locals.currentSessionId) {
 		return json({ error: 'Unauthorized' }, { status: 401 });
 	}
 
@@ -34,11 +35,15 @@ export const POST: RequestHandler = async ({ request, locals, platform }) => {
 		);
 	}
 
-	const created = await createApiToken(db, locals.user.id, {
-		name: body?.name,
-		scopes: parsed ?? undefined
-	});
-
-	// The raw token is only ever returned here — the table stores just its hash.
-	return json({ ok: true, token: created.token, tokenMeta: created.summary }, { status: 201 });
+	try {
+		const created = await createApiToken(db, locals.user.id, locals.currentSessionId, {
+			name: body?.name,
+			scopes: parsed ?? undefined
+		});
+		// The raw token is only ever returned here — the table stores just its hash.
+		return json({ ok: true, token: created.token, tokenMeta: created.summary }, { status: 201 });
+	} catch (error) {
+		if (error instanceof CredentialAuthorizationError) return json({ error: error.message }, { status: 401 });
+		throw error;
+	}
 };

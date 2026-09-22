@@ -63,6 +63,7 @@ function mockDb(input: { addresses: AddressRow[]; domains: DomainRow[] }): D1Dat
 							return { results: [] };
 						},
 						async first() {
+							if (sql.includes('FROM emails original')) return { id: 'native-mail' };
 							if (sql.includes('FROM domains')) {
 								const name = String(args[0] ?? '').toLowerCase();
 								return input.domains.find((row) => row.name === name) ?? null;
@@ -90,6 +91,7 @@ const defaultAddress: AddressRow = {
 };
 
 const inbound = {
+	id: 'native-mail',
 	direction: 'inbound' as const,
 	to_addr: 'Ada <hello@example.com>',
 	from_addr: 'Sam <sam@other.test>'
@@ -145,7 +147,7 @@ describe('resolveReplyFromAddress', () => {
 		assert.equal(identity?.label, null);
 	});
 
-	test('sends from the received mailbox when the user already has an address on that domain', async () => {
+	test('owning one address does not grant other addresses on that domain', async () => {
 		const identity = await resolveReplyFromAddress(
 			mockDb({
 				addresses: [defaultAddress],
@@ -166,7 +168,7 @@ describe('resolveReplyFromAddress', () => {
 			user,
 			inbound
 		);
-		assert.equal(identity?.address, 'hello@example.com');
+		assert.equal(identity?.address, 'ada@example.com');
 	});
 
 	test('falls back to the default address when the mailbox cannot send', async () => {

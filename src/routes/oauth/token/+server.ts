@@ -1,7 +1,7 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { checkRateLimit } from '$lib/server/auth';
 import {
-	consumeAuthorizationCode,
+	readAuthorizationCode,
 	deleteExpiredCodes,
 	issueGrant,
 	isValidCodeVerifier,
@@ -50,7 +50,7 @@ export const POST: RequestHandler = async ({ request, platform, url, getClientAd
 				if (!isValidCodeVerifier(params.code_verifier)) {
 					throw new OAuthError('invalid_request', 'code_verifier is required (PKCE)');
 				}
-				const code = await consumeAuthorizationCode(db, params.code);
+				const code = await readAuthorizationCode(db, params.code);
 				if (!code) throw new OAuthError('invalid_grant', 'Authorization code is invalid or expired');
 				if (code.client_id !== clientId) {
 					throw new OAuthError('invalid_grant', 'Authorization code was issued to a different client');
@@ -64,12 +64,7 @@ export const POST: RequestHandler = async ({ request, platform, url, getClientAd
 				if (params.resource && params.resource !== code.resource) {
 					throw new OAuthError('invalid_target', `This server issues tokens for ${mcpResourceUri(url.origin)} only`);
 				}
-				const tokens = await issueGrant(db, {
-					clientId,
-					userId: code.user_id,
-					scope: code.scope,
-					resource: code.resource
-				});
+				const tokens = await issueGrant(db, code);
 				// Cheap housekeeping while we are here.
 				void deleteExpiredCodes(db).catch(() => {});
 				return json(tokens, { headers: NO_STORE });

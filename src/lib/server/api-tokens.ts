@@ -1,6 +1,7 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import { hashToken } from './crypto';
 import type { ApiTokenSummary, User } from '$lib/types';
+import { CredentialAuthorizationError, LIVE_CREDENTIAL_SESSION } from './credential-authorization';
 
 /** Scopes a token can carry. Enforced in `authorizeApiRequest`. */
 export const API_SCOPES = ['mail:send', 'mail:read', 'admin'] as const;
@@ -110,6 +111,7 @@ function mapRow(row: TokenRow): ApiTokenSummary {
 export async function createApiToken(
 	db: D1Database,
 	userId: string,
+	sessionId: string,
 	options: { name?: string; scopes?: ApiScope[] } = {}
 ): Promise<CreatedApiToken> {
 	const token = generateToken();
@@ -119,13 +121,16 @@ export async function createApiToken(
 	const name = (options.name ?? '').trim().slice(0, 60) || 'Default';
 	const createdAt = new Date().toISOString();
 
-	await db
+	const inserted = await db
 		.prepare(
 			`INSERT INTO api_tokens (id, user_id, name, token_hash, token_preview, scopes, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?)`
+			 SELECT ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (${LIVE_CREDENTIAL_SESSION})
+			 AND (? = 0 OR EXISTS (SELECT 1 FROM users WHERE id = ? AND is_admin = 1))`
 		)
-		.bind(id, userId, name, hash, previewFor(token), scopes.join(','), createdAt)
+		.bind(id, userId, name, hash, previewFor(token), scopes.join(','), createdAt,
+			sessionId, userId, scopes.includes('admin') ? 1 : 0, userId)
 		.run();
+	if ((inserted.meta.changes ?? 0) === 0) throw new CredentialAuthorizationError();
 
 	return {
 		token,

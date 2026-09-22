@@ -14,6 +14,7 @@ import {
 	type OAuthScope
 } from '$lib/server/oauth';
 import { loginHref } from '$lib/next-url';
+import { CredentialAuthorizationError } from '$lib/server/credential-authorization';
 
 /**
  * The consent screen. GET validates the request and renders it; POST records
@@ -210,25 +211,35 @@ export const actions: Actions = {
 		// The person may authorize any account signed in on this browser, not just
 		// the active one — but nothing else.
 		let userId = locals.user.id;
+		let sessionId = locals.currentSessionId;
 		const chosen = param(form, 'user_id', 128);
 		if (chosen && chosen !== locals.user.id) {
 			const linked = await resolveLinkedSessions(db, readLinkedTokens(cookies));
-			if (!linked.some((session) => session.user.id === chosen && !session.user.must_change_password)) {
+			const session = linked.find((session) => session.user.id === chosen && !session.user.must_change_password);
+			if (!session) {
 				return fail(400, {
 					invalid: { code: 'invalid_request', message: 'That account is not signed in on this browser' }
 				});
 			}
 			userId = chosen;
+			sessionId = session.sessionId;
 		}
 
-		const code = await issueAuthorizationCode(db, {
-			client_id: parsed.client.client_id,
-			user_id: userId,
-			redirect_uri: parsed.redirectUri,
-			code_challenge: parsed.codeChallenge,
-			scope: parsed.scope,
-			resource: parsed.resource
-		});
+		if (!sessionId) return fail(401, { invalid: { code: 'access_denied', message: 'Sign in again to authorize this account.' } });
+		let code: string;
+		try {
+			code = await issueAuthorizationCode(db, {
+				client_id: parsed.client.client_id,
+				user_id: userId,
+				redirect_uri: parsed.redirectUri,
+				code_challenge: parsed.codeChallenge,
+				scope: parsed.scope,
+				resource: parsed.resource
+			}, sessionId);
+		} catch (error) {
+			if (error instanceof CredentialAuthorizationError) return fail(401, { invalid: { code: 'access_denied', message: error.message } });
+			throw error;
+		}
 
 		throw redirect(303, redirectWith(url.origin, parsed.redirectUri, { code, state: parsed.state }));
 	}

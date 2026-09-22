@@ -1,4 +1,5 @@
 import type { D1Database, R2Bucket } from '@cloudflare/workers-types';
+import { CredentialAuthorizationError, LIVE_CREDENTIAL_SESSION } from './credential-authorization';
 import {
 	PAIRING_CODE_TTL_MINUTES,
 	MOBILE_SESSION_DAYS,
@@ -291,7 +292,8 @@ export async function revokeSession(db: D1Database, userId: string, sessionId: s
 
 export async function createPairingCode(
 	db: D1Database,
-	userId: string
+	userId: string,
+	sessionId: string
 ): Promise<{ code: string; expiresAt: string }> {
 	// 128 bits of entropy, shown as a compact base64url string inside the QR.
 	const bytes = crypto.getRandomValues(new Uint8Array(16));
@@ -304,10 +306,12 @@ export async function createPairingCode(
 	// grow the table indefinitely. Separate tabs may each keep their own valid
 	// code; opening one tab must not silently invalidate the QR shown in another.
 	await deleteExpiredPairingCodes(db);
-	await db
-		.prepare('INSERT INTO pairing_codes (id, user_id, code_hash, expires_at) VALUES (?, ?, ?, ?)')
-		.bind(id, userId, code_hash, expiresAt)
+	const inserted = await db
+		.prepare(`INSERT INTO pairing_codes (id, user_id, code_hash, expires_at)
+			SELECT ?, ?, ?, ? WHERE EXISTS (${LIVE_CREDENTIAL_SESSION})`)
+		.bind(id, userId, code_hash, expiresAt, sessionId, userId)
 		.run();
+	if ((inserted.meta.changes ?? 0) === 0) throw new CredentialAuthorizationError();
 
 	return { code, expiresAt };
 }
